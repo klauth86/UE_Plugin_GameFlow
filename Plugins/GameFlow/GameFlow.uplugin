@@ -1,0 +1,36 @@
+{
+	"FileVersion": 3,
+	"Version": 1.0,
+	"VersionName": "1.0",
+	"FriendlyName": "Game Flow",
+	"Description": "Game Flow",
+	"Category": "Gameplay",
+	"CreatedBy": "Pentangle Studio",
+	"CreatedByURL": "https://github.com/klauth86",
+	"DocsURL": "",
+	"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/7583685de6864f8d85a1656091e0293a",
+	"SupportURL": "https://discord.gg/TjxHxkwzRb",
+	"EngineVersion": "5.2.0",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "GameFlowCore",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		},
+		{
+			"Name": "GameFlowCoreEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64"
+			]
+		}
+	]
+}
