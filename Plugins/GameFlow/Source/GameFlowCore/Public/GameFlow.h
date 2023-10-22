@@ -156,9 +156,6 @@ class GAMEFLOWCORE_API UGameFlowState : public UObject
 public:
 
 	UPROPERTY()
-	FGuid StateGuid;
-
-	UPROPERTY()
 	FName StateTitle;
 
 	/* Sub Flow */
