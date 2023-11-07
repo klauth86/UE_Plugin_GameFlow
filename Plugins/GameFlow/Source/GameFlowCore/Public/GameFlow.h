@@ -18,6 +18,59 @@ namespace LogGameFlowUtils
 }
 
 //------------------------------------------------------
+// EGFSStatus
+//------------------------------------------------------
+
+UENUM(BlueprintType)
+enum class EGFSStatus : uint8
+{
+	Unset = 0,
+	Started,
+	InProgress,
+	Done,
+
+	Failed
+};
+
+//------------------------------------------------------
+// FOperationInfo
+//------------------------------------------------------
+
+enum class EOperationType : uint8
+{
+	Unset,
+
+	EnterState,
+	EnterState_Set,
+	EnterState_Steps,
+	EnterState_SubFlow,
+
+	ExitState,
+	ExitState_SubFlow,
+	ExitState_Steps,
+	ExitState_Set,
+
+	StepsCatcher,
+};
+
+struct FOperationInfo
+{
+	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const FGuid nextOperation)
+		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperation(nextOperation)
+	{}
+
+	const EOperationType OperationType;
+	FGuid& ActiveState;
+	TWeakObjectPtr<UGameFlow> Flow;
+	const FGuid State;
+	const FGuid NextOperation;
+
+	TSet<int32> StepIndices;
+
+	void ReportStepStatus(const UGFS_Base* step, const EGFSStatus status);
+};
+
+//------------------------------------------------------
 // UGameFlowContext
 //------------------------------------------------------
 
@@ -33,21 +86,21 @@ class GAMEFLOWCORE_API IGameFlowContext
 
 public:
 
-	/* Sets Value for Key in Context */
-	UFUNCTION(BlueprintNativeEvent, Category = "Game Flow Context")
+	/* Sets Value for Key */
+	UFUNCTION(BlueprintNativeEvent, Category = "Flow Context")
 	void SetValue(const FString& key, UObject* value);
 
 	virtual void SetValue_Implementation(const FString& key, UObject* value) {}
 
-	/* Gets Value for Key from Context */
-	UFUNCTION(BlueprintNativeEvent, Category = "Game Flow Context")
+	/* Gets Value by Key */
+	UFUNCTION(BlueprintNativeEvent, Category = "Flow Context")
 	UObject* GetValue(const FString& key) const;
 
 	virtual UObject* GetValue_Implementation(const FString& key) const { return nullptr; }
 };
 
 //------------------------------------------------------
-// UGameFlowContextAsset
+// UGFC_MapBased
 //------------------------------------------------------
 
 UCLASS(BlueprintType)
@@ -88,29 +141,39 @@ class GAMEFLOWCORE_API UGFS_Base : public UObject
 
 public:
 
-	/* Executed when owning Game Flow/State is entered */
+	/* Executed when owning State is entered */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
-	void OnEnter(UGameFlow* callingGameFlow);
+	void OnEnter();
 
-	virtual void OnEnter_Implementation(UGameFlow* callingGameFlow) {}
+	virtual void OnEnter_Implementation() {}
 
-	/* Executed when owning Game Flow/State is exited */
+	/* Executed when owning State is exited */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
-	void OnExit(UGameFlow* callingGameFlow);
+	void OnExit();
 
-	virtual void OnExit_Implementation(UGameFlow* callingGameFlow) {}
+	virtual void OnExit_Implementation() {}
 
-	/* Executed when owning Game Flow World context is changed */
+	/* Executed when owning Flow World Context is changed */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
-	void OnWorldContextChanged(UGameFlow* callingGameFlow, bool isOwningObjectActive);
+	void OnWorldContextChanged(const bool isOwningStateActive);
 
-	virtual void OnWorldContextChanged_Implementation(UGameFlow* callingGameFlow, bool isOwningObjectActive) {}
+	virtual void OnWorldContextChanged_Implementation(const bool isOwningStateActive) {}
 
-	/* Generates description for step */
+	/* Generates description for Step */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	FText GenerateDescription() const;
 
 	virtual FText GenerateDescription_Implementation() const { return FText::FromString(GetClass()->GetName()); }
+
+	/* Gets owning State for Step */
+	UFUNCTION(BlueprintCallable, Category = "Step Base")
+	UGameFlowState* GetOwningState() const { return GetTypedOuter<UGameFlowState>(); }
+
+	/* Notifies owning State when Step enter/exit execution is complete */
+	UFUNCTION(BlueprintCallable, Category = "Step Base")
+	void OnComplete(const EGFSStatus status) const;
+
+	FGuid StepsCatcherOperation;
 };
 
 //------------------------------------------------------
@@ -124,8 +187,8 @@ class GAMEFLOWCORE_API UGameFlowTransition : public UObject
 
 public:
 
-	/* If set, transition will be triggered by its Transition Key */
-	UPROPERTY(EditAnywhere, Category = "Game Flow Transition")
+	/* Transition Key */
+	UPROPERTY(EditAnywhere, Category = "Transition")
 	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
@@ -155,6 +218,14 @@ class GAMEFLOWCORE_API UGameFlowState : public UObject
 
 public:
 
+	UFUNCTION(BlueprintCallable, Category = "State")
+	UGameFlow* GetOwningFlow() const { return GetTypedOuter<UGameFlow>(); }
+
+public:
+
+	UPROPERTY()
+	FGuid StateGuid;
+
 	UPROPERTY()
 	FName StateTitle;
 
@@ -162,24 +233,28 @@ public:
 	UPROPERTY(EditAnywhere, Category = "State")
 	UGameFlow* SubFlow;
 
-	/* If true, Sub Flow asset will be used as template to create its instance inside this State */
+	/* If true, Sub Flow will be used as template to create instance inside this State */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow != nullptr", EditConditionHides))
 	uint8 bInstancedSubFlow : 1;
 
-	/* If true, Sub Flow asset will be reset when this State is entered */
+	/* If true, Sub Flow will be reset when this State is entered */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow != nullptr && !bInstancedSubFlow", EditConditionHides))
 	uint8 bResetSubFlowOnEnterState : 1;
 
-	/* If true, Sub Flow asset will be reset when this State is exited */
+	/* If true, Sub Flow will be reset when this State is exited */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow != nullptr && !bInstancedSubFlow", EditConditionHides))
 	uint8 bResetSubFlowOnExitState : 1;
 
 	UPROPERTY()
-	TArray<FGuid> SubFlowActiveStates;
+	FGuid SubFlowActiveState;
 
-	/* Steps to execute when State is entered and exited, going from first to last when entering and vice versa on exiting */
+	/* Steps to execute when State is entered/exited, going from first to last when entering and vice versa when exiting */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditInline))
 	TArray<TObjectPtr<UGFS_Base>> Steps;
+
+	/* Transition Key to apply when all Steps of this State will finish Enter execution */
+	UPROPERTY(EditAnywhere, Category = "State")
+	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
 //------------------------------------------------------
@@ -193,66 +268,82 @@ class GAMEFLOWCORE_API UGameFlow : public UObject
 
 public:
 
+	static void ExecuteOperation(const FGuid& operation);
+
+	static void OnEnterState(const FOperationInfo& operationInfo);
+
+	static void OnEnterState_Set(const FOperationInfo& operationInfo);
+
+	static void OnEnterState_Steps(const FOperationInfo& operationInfo);
+
+	static void OnEnterState_SubFlow(const FOperationInfo& operationInfo);
+
+	static void OnExitState(const FOperationInfo& operationInfo);
+
+	static void OnExitState_SubFlow(const FOperationInfo& operationInfo);
+
+	static void OnExitState_Steps(const FOperationInfo& operationInfo);
+
+	static void OnExitState_Set(const FOperationInfo& operationInfo);
+
+	static void OnStepsCatcher(const FOperationInfo& operationInfo);
+
 #if WITH_EDITORONLY_DATA
 
 	UPROPERTY()
 	UEdGraph* EdGraph;
 
-	UGameFlowState* AddState(const FGuid& guid, const FName stateTitle);
+	UGameFlowState* AddState(const FGuid& stateToAdd, const FName stateTitle);
 
-	void DestroyState(const FGuid& guid);
+	void DestroyState(const FGuid& stateToDestroy);
 
-	void DestroyStateTransition(const FGuid& guid);
+	void DestroyStateTransition(const FGuid& stateToDestroy);
 
-	bool IsStateActive(const FGuid& guid) const { return ActiveStates.Contains(guid); }
+	bool IsStateActive(const FGuid& state) const { return state == ActiveState; }
 
-	void SetEntryState(const FGuid& guid) { EntryState = guid; }
-
-	void InvalidateEntryState() { EntryState.Invalidate(); }
+	void SetEntryState(const FGuid& state) { EntryState = state; }
 
 	const TMap<FGuid, TObjectPtr<UGameFlowState>>& GetStates() const { return States; }
 
-	UGameFlowTransition* AddTransition(const FGuid& fromGuid, const FGuid& toGuid);
+	UGameFlowTransition* AddTransition(const FGuid& fromState, const FGuid& toState);
 
-	void DestroyTransition(const FGuid& fromGuid, const FGuid& toGuid);
+	void DestroyTransition(const FGuid& fromState, const FGuid& toState);
 
 	const TMap<FGuid, FGameFlowTransitionCollection>& GetTransitionCollections() const { return TransitionCollections; }
 
 #endif
 
+	const UGameFlowState* GetStateObject(const FGuid& state) const { return States.Contains(state) ? States[state] : nullptr; }
+
 	/* Finds States by title */
-	UFUNCTION(BlueprintCallable, Category = "Game Flow")
-	void FindStateByTitle(FName stateTitle, TArray<UGameFlowState*>& outStates) const;
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	void FindStateByTitle(FName stateTitle, TArray<UGameFlowState*>& outStateObjects) const;
 
-	/* Enters Game Flow */
-	UFUNCTION(BlueprintCallable, Category = "Game Flow")
-	void EnterFlow(bool executeSteps = true) { EnterFlow(ActiveStates, executeSteps); }
+	/* Enters Flow */
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	void EnterFlow() { EnterFlow(ActiveState, FGuid()); }
 
-	/* Exits Game Flow */
-	UFUNCTION(BlueprintCallable, Category = "Game Flow")
-	void ExitFlow(bool executeSteps = true) { ExitFlow(ActiveStates, executeSteps); }
+	/* Exits Flow */
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	void ExitFlow() { ExitFlow(ActiveState, FGuid()); }
 
 	/* Makes transition by Transition Key */
-	UFUNCTION(BlueprintCallable, Category = "Game Flow")
-	bool MakeTransition(UGameFlowTransitionKey* transitionKey, bool executeSteps = true);
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	bool MakeTransition(UGameFlowTransitionKey* transitionKey);
 
-	/* Sets World Context for Game Flow */
-	UFUNCTION(BlueprintCallable, Category = "Game Flow")
-	void SetWorldContext(UObject* worldContextObject) { SetWorldPtr(ActiveStates, worldContextObject ? worldContextObject->GetWorld() : nullptr); }
+	/* Sets World Context for Flow */
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	void SetWorldContext(UObject* worldContextObject) { SetWorldPtr(ActiveState, worldContextObject ? worldContextObject->GetWorld() : nullptr); }
 
 	virtual UWorld* GetWorld() const override { return WorldPtr.Get(); }
 
 protected:
+	
+	void EnterFlow(FGuid& activeState, const FGuid& nextOperation);
 
-	void EnterState(TArray<FGuid>& activeStates, const FGuid& guid, bool executeSteps);
+	void ExitFlow(FGuid& activeState, const FGuid& nextOperation);
 
-	void ExitState(TArray<FGuid>& activeStates, const FGuid& guid, bool executeSteps);
-
-	void EnterFlow(TArray<FGuid>& activeStates, bool executeSteps);
-
-	void ExitFlow(TArray<FGuid>& activeStates, bool executeSteps);
-
-	void SetWorldPtr(TArray<FGuid>& activeStates, UWorld* world);
+	void SetWorldPtr(FGuid& activeState, UWorld* world);
 
 protected:
 
@@ -266,12 +357,8 @@ protected:
 	TMap<FGuid, FGameFlowTransitionCollection> TransitionCollections;
 
 	UPROPERTY()
-	TArray<FGuid> ActiveStates;
+	FGuid ActiveState;
 
 	UPROPERTY()
 	FGuid EntryState;
-
-	/* Steps to execute when Game Flow is entered and exited, going from first to last when entering and vice versa on exiting */
-	UPROPERTY(EditAnywhere, Category = "Game Flow", meta = (EditInline))
-	TArray<TObjectPtr<UGFS_Base>> Steps;
 };

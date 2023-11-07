@@ -103,7 +103,7 @@ void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 		}
 		else
 		{
-			gameFlow->InvalidateEntryState();
+			gameFlow->SetEntryState(FGuid());
 		}
 	}
 }
