@@ -103,7 +103,7 @@ void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 		}
 		else
 		{
-			gameFlow->InvalidateEntryState();
+			gameFlow->SetEntryState(FGuid());
 		}
 	}
 }
@@ -2125,12 +2125,19 @@ void FGameFlowEditor::PasteNodes()
 			TMap<FGuid, UGameFlowState*> stateRemapping;
 			TMap<FGuid, const FGameFlowTransitionCollection*> transitionRemapping;
 
+			TSet<UGameFlowGraphNode_Transition*> transitionNodes;
+
 			// Duplicate Game Flow States
 			for (TSet<UEdGraphNode*>::TIterator It(PastedNodes); It; ++It)
 			{
 				UEdGraphNode* Node = *It;
 
 				guidRemapping.Add(Node->NodeGuid, FGuid::NewGuid());
+
+				if (UGameFlowGraphNode_Transition* transitionNode = Cast<UGameFlowGraphNode_Transition>(Node))
+				{
+					transitionNodes.Add(transitionNode);
+				}
 
 				if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(Node))
 				{
@@ -2168,14 +2175,33 @@ void FGameFlowEditor::PasteNodes()
 				{
 					state->Steps.Add(DuplicateObject(step, state));
 				}
+
+				state->TransitionKey = stateRemappingEntry.Value->TransitionKey;
 			}
 
 			for (TPair<FGuid, const FGameFlowTransitionCollection*>& transitionRemappingEntry : transitionRemapping)
 			{
 				for (const TPair<FGuid, TObjectPtr<UGameFlowTransition>>& transitionEntry : transitionRemappingEntry.Value->Transitions)
 				{
-					UGameFlowTransition* transition = GameFlow->AddTransition(guidRemapping[transitionRemappingEntry.Key], guidRemapping[transitionEntry.Key]);
-					transition->TransitionKey = transitionEntry.Value->TransitionKey;
+					if (guidRemapping.Contains(transitionRemappingEntry.Key) && guidRemapping.Contains(transitionEntry.Key))
+					{
+						bool shouldBeAdded = false;
+
+						for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
+						{
+							if (transitionNode->GetPreviousState()->NodeGuid == transitionRemappingEntry.Key && transitionNode->GetNextState()->NodeGuid == transitionEntry.Key)
+							{
+								shouldBeAdded = true;
+								break;
+							}
+						}
+
+						if (shouldBeAdded)
+						{
+							UGameFlowTransition* transition = GameFlow->AddTransition(guidRemapping[transitionRemappingEntry.Key], guidRemapping[transitionEntry.Key]);
+							transition->TransitionKey = transitionEntry.Value->TransitionKey;
+						}
+					}
 				}
 			}
 

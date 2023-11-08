@@ -23,9 +23,9 @@ class UE_PLUGIN_GAMEFLOW_API UGFS_ShowWidget : public UGFS_Base
 
 public:
 
-	virtual void OnEnter_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnEnter_Implementation() override;
 
-	virtual void OnExit_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnExit_Implementation() override;
 
 	virtual FText GenerateDescription_Implementation() const override;
 
@@ -62,7 +62,7 @@ class UE_PLUGIN_GAMEFLOW_API UGFS_SaveGame_Load : public UGFS_Base
 
 public:
 
-	virtual void OnEnter_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnEnter_Implementation() override;
 
 	virtual FText GenerateDescription_Implementation() const override;
 
@@ -79,10 +79,6 @@ protected:
 	/* Context to store loaded SaveGame */
 	UPROPERTY(EditDefaultsOnly, Category = "SaveGame Load")
 	TScriptInterface<IGameFlowContext> Context;
-
-	/* Transition Key for next State to go when SaveGame is loaded */
-	UPROPERTY(EditDefaultsOnly, Category = "SaveGame Load")
-	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
 //------------------------------------------------------
@@ -96,9 +92,9 @@ class UE_PLUGIN_GAMEFLOW_API UGFS_Level_Load : public UGFS_Base
 
 public:
 
-	virtual void OnEnter_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnEnter_Implementation() override;
 
-	virtual void OnWorldContextChanged_Implementation(UGameFlow* callingGameFlow, bool isOwningObjectActive) override;
+	virtual void OnWorldContextChanged_Implementation(const bool isOwningObjectActive) override;
 
 	virtual FText GenerateDescription_Implementation() const override;
 
@@ -107,10 +103,6 @@ protected:
 	/* Map to load when entering owning Game Flow/State */
 	UPROPERTY(EditDefaultsOnly, Category = "Level Load", meta = (AllowedClasses = "/Script/Engine.World"))
 	FSoftObjectPath MapToLoad;
-
-	/* Transition Key for next State to go when Map is loaded */
-	UPROPERTY(EditDefaultsOnly, Category = "Level Load")
-	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
 //------------------------------------------------------
@@ -124,9 +116,9 @@ class UE_PLUGIN_GAMEFLOW_API UGFS_InputMappingContext_Switch : public UGFS_Base
 
 public:
 
-	virtual void OnEnter_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnEnter_Implementation() override;
 
-	virtual void OnExit_Implementation(UGameFlow* callingGameFlow) override;
+	virtual void OnExit_Implementation() override;
 
 	virtual FText GenerateDescription_Implementation() const override;
 
