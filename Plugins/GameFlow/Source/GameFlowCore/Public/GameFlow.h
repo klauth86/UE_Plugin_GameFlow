@@ -47,12 +47,14 @@ enum class EOperationType : uint8
 	EnterState,
 	EnterState_Set,
 	EnterState_Steps,
+	EnterState_SubFlow_Set,
 	EnterState_SubFlow,
 
 	AutoTransition,
 
 	ExitState,
 	ExitState_SubFlow,
+	ExitState_SubFlow_Set,
 	ExitState_Steps,
 	ExitState_Set,
 
@@ -166,9 +168,9 @@ public:
 
 	/* Executed when owning Flow World Context is changed */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
-	void OnWorldContextChanged(const bool isOwningStateActive);
+	void OnWorldContextChanged(const bool force);
 
-	virtual void OnWorldContextChanged_Implementation(const bool isOwningStateActive) {}
+	virtual void OnWorldContextChanged_Implementation(const bool force) {}
 
 	/* Generates description for Step */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
@@ -287,11 +289,15 @@ public:
 
 	static void OnEnterState_Steps(const FOperationInfo& operationInfo);
 
+	static void OnEnterState_SubFlow_Set(const FOperationInfo& operationInfo);
+
 	static void OnEnterState_SubFlow(const FOperationInfo& operationInfo);
 
 	static void OnExitState(const FOperationInfo& operationInfo);
 
 	static void OnExitState_SubFlow(const FOperationInfo& operationInfo);
+
+	static void OnExitState_SubFlow_Set(const FOperationInfo& operationInfo);
 
 	static void OnExitState_Steps(const FOperationInfo& operationInfo);
 

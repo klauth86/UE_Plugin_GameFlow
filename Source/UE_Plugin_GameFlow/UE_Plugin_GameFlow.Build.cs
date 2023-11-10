@@ -7,10 +7,10 @@ public class UE_Plugin_GameFlow : ModuleRules
 	public UE_Plugin_GameFlow(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-
-        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
-
-        PrivateDependencyModuleNames.AddRange(new string[] { "GameFlowCore", "UMG", "EnhancedInput" });
+		
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		
+		PrivateDependencyModuleNames.AddRange(new string[] { "GameFlowCore", "UMG", "EnhancedInput" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

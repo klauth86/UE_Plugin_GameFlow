@@ -179,18 +179,15 @@ void UGFS_Level_Load::OnEnter_Implementation()
 	}
 }
 
-void UGFS_Level_Load::OnWorldContextChanged_Implementation(const bool isOwningStateActive)
+void UGFS_Level_Load::OnWorldContextChanged_Implementation(const bool force)
 {
-	if (isOwningStateActive)
+	UGameFlow* flow = GetOwningState()->GetOwningFlow();
+
+	UWorld* world = flow->GetWorld();
+
+	if (world && !MapToLoad.IsNull() && world->RemovePIEPrefix(world->GetPathName()) == MapToLoad.GetAssetPathString())
 	{
-		UGameFlow* flow = GetOwningState()->GetOwningFlow();
-
-		UWorld* world = flow->GetWorld();
-
-		if (world && !MapToLoad.IsNull() && world->RemovePIEPrefix(world->GetPathName()) == MapToLoad.GetAssetPathString())
-		{
-			OnComplete(EGFSStatus::Finished);
-		}
+		OnComplete(EGFSStatus::Finished);
 	}
 }
 
@@ -279,7 +276,7 @@ void UMyGameInstance::OnWorldChanged(UWorld* OldWorld, UWorld* NewWorld)
 {
 	if (OldWorld)
 	{
-		MainGameFlow->SetWorldContext(nullptr, false);
+		MainGameFlow->SetWorldContext(nullptr, true);
 
 		OldWorld->OnWorldBeginPlay.RemoveAll(this);
 	}
