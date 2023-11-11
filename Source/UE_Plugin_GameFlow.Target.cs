@@ -4,7 +4,7 @@ using UnrealBuildTool;
 
 public class UE_Plugin_GameFlowTarget : TargetRules
 {
-    public UE_Plugin_GameFlowTarget(TargetInfo Target) : base(Target)
+	public UE_Plugin_GameFlowTarget(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Game;
 		DefaultBuildSettings = BuildSettingsVersion.V2;
