@@ -79,10 +79,6 @@ protected:
 	/* Context to store loaded SaveGame */
 	UPROPERTY(EditDefaultsOnly, Category = "SaveGame Load")
 	TScriptInterface<IGameFlowContext> Context;
-
-	/* Transition Key for next State to go when SaveGame is loaded */
-	UPROPERTY(EditDefaultsOnly, Category = "SaveGame Load")
-	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
 //------------------------------------------------------
@@ -98,7 +94,7 @@ public:
 
 	virtual void OnEnter_Implementation() override;
 
-	virtual void OnWorldContextChanged_Implementation(const bool isOwningStateActive) override;
+	virtual void OnWorldContextChanged_Implementation(const bool isOwningObjectActive) override;
 
 	virtual FText GenerateDescription_Implementation() const override;
 
@@ -107,10 +103,6 @@ protected:
 	/* Map to load when entering owning Game Flow/State */
 	UPROPERTY(EditDefaultsOnly, Category = "Level Load", meta = (AllowedClasses = "/Script/Engine.World"))
 	FSoftObjectPath MapToLoad;
-
-	/* Transition Key for next State to go when Map is loaded */
-	UPROPERTY(EditDefaultsOnly, Category = "Level Load")
-	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
 //------------------------------------------------------

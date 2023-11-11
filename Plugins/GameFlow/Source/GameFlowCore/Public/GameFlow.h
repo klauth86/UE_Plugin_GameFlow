@@ -27,7 +27,7 @@ enum class EGFSStatus : uint8
 	Unset = 0,
 	Started,
 	InProgress,
-	Done,
+	Finished,
 
 	Failed
 };
@@ -36,6 +36,9 @@ enum class EGFSStatus : uint8
 // FOperationInfo
 //------------------------------------------------------
 
+typedef uint64 OperationId;
+
+UENUM()
 enum class EOperationType : uint8
 {
 	Unset,
@@ -43,27 +46,36 @@ enum class EOperationType : uint8
 	EnterState,
 	EnterState_Set,
 	EnterState_Steps,
+	EnterState_SubFlow_Set,
 	EnterState_SubFlow,
+
+	AutoTransition,
 
 	ExitState,
 	ExitState_SubFlow,
+	ExitState_SubFlow_Set,
 	ExitState_Steps,
 	ExitState_Set,
 
 	StepsCatcher,
+
+	EnterTransition,
+	ExitTransition,
 };
 
 struct FOperationInfo
 {
-	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const FGuid nextOperation)
-		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperation(nextOperation)
+	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows)
+		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSharedSubFlows(resetSharedSubFlows)
 	{}
 
 	const EOperationType OperationType;
 	FGuid& ActiveState;
 	TWeakObjectPtr<UGameFlow> Flow;
 	const FGuid State;
-	const FGuid NextOperation;
+	const OperationId NextOperationId;
+	const uint8 ExecuteSteps : 1;
+	const uint8 ResetSharedSubFlows : 1;
 
 	TSet<int32> StepIndices;
 
@@ -145,19 +157,19 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnEnter();
 
-	virtual void OnEnter_Implementation() {}
+	virtual void OnEnter_Implementation() { OnComplete(EGFSStatus::Finished); }
 
 	/* Executed when owning State is exited */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnExit();
 
-	virtual void OnExit_Implementation() {}
+	virtual void OnExit_Implementation() { OnComplete(EGFSStatus::Finished); }
 
 	/* Executed when owning Flow World Context is changed */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
-	void OnWorldContextChanged(const bool isOwningStateActive);
+	void OnWorldContextChanged(const bool force);
 
-	virtual void OnWorldContextChanged_Implementation(const bool isOwningStateActive) {}
+	virtual void OnWorldContextChanged_Implementation(const bool force) {}
 
 	/* Generates description for Step */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
@@ -173,7 +185,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	void OnComplete(const EGFSStatus status) const;
 
-	FGuid StepsCatcherOperation;
+	OperationId StepsCatcherOperationId;
 };
 
 //------------------------------------------------------
@@ -214,7 +226,7 @@ public:
 UCLASS(BlueprintType)
 class GAMEFLOWCORE_API UGameFlowState : public UObject
 {
-	GENERATED_BODY()
+	GENERATED_UCLASS_BODY()
 
 public:
 
@@ -253,7 +265,7 @@ public:
 	TArray<TObjectPtr<UGFS_Base>> Steps;
 
 	/* Transition Key to apply when all Steps of this State will finish Enter execution */
-	UPROPERTY(EditAnywhere, Category = "State")
+	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow == nullptr", EditConditionHides))
 	TObjectPtr<UGameFlowTransitionKey> TransitionKey;
 };
 
@@ -264,11 +276,11 @@ public:
 UCLASS(BlueprintType)
 class GAMEFLOWCORE_API UGameFlow : public UObject
 {
-	GENERATED_BODY()
+	GENERATED_UCLASS_BODY()
 
 public:
 
-	static void ExecuteOperation(const FGuid& operation);
+	static void ExecuteOperation(const OperationId& operationId);
 
 	static void OnEnterState(const FOperationInfo& operationInfo);
 
@@ -276,17 +288,27 @@ public:
 
 	static void OnEnterState_Steps(const FOperationInfo& operationInfo);
 
+	static void OnEnterState_SubFlow_Set(const FOperationInfo& operationInfo);
+
 	static void OnEnterState_SubFlow(const FOperationInfo& operationInfo);
 
 	static void OnExitState(const FOperationInfo& operationInfo);
 
 	static void OnExitState_SubFlow(const FOperationInfo& operationInfo);
 
+	static void OnExitState_SubFlow_Set(const FOperationInfo& operationInfo);
+
 	static void OnExitState_Steps(const FOperationInfo& operationInfo);
 
 	static void OnExitState_Set(const FOperationInfo& operationInfo);
 
-	static void OnStepsCatcher(const FOperationInfo& operationInfo);
+	static void OnStepsCatcher(const FOperationInfo& operationInfo) { ExecuteOperation(operationInfo.NextOperationId); }
+
+	static void OnAutoTransition(const FOperationInfo& operationInfo);
+
+	static void OnEnterTransition(const FOperationInfo& operationInfo);
+
+	static void OnExitTransition(const FOperationInfo& operationInfo);
 
 #if WITH_EDITORONLY_DATA
 
@@ -319,31 +341,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void FindStateByTitle(FName stateTitle, TArray<UGameFlowState*>& outStateObjects) const;
 
+	/* Returns true if Flow is transitioning */
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	bool IsTransitioning() const { return bIsTransitioning; }
+
 	/* Enters Flow */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void EnterFlow() { EnterFlow(ActiveState, FGuid()); }
+	void EnterFlow(const bool executeSteps);
 
 	/* Exits Flow */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void ExitFlow() { ExitFlow(ActiveState, FGuid()); }
+	void ExitFlow(const bool executeSteps, const bool resetSharedSubFlows);
 
 	/* Makes transition by Transition Key */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	bool MakeTransition(UGameFlowTransitionKey* transitionKey);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps);
 
 	/* Sets World Context for Flow */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void SetWorldContext(UObject* worldContextObject) { SetWorldPtr(ActiveState, worldContextObject ? worldContextObject->GetWorld() : nullptr); }
+	void SetWorldContext(UObject* worldContextObject, const bool force) { SetWorldPtr(ActiveState, worldContextObject ? worldContextObject->GetWorld() : nullptr, force); }
 
 	virtual UWorld* GetWorld() const override { return WorldPtr.Get(); }
 
 protected:
 	
-	void EnterFlow(FGuid& activeState, const FGuid& nextOperation);
+	void EnterFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps);
 
-	void ExitFlow(FGuid& activeState, const FGuid& nextOperation);
+	void ExitFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
 
-	void SetWorldPtr(FGuid& activeState, UWorld* world);
+	OperationId CreateTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
+
+	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
 protected:
 
@@ -356,9 +384,12 @@ protected:
 	UPROPERTY()
 	TMap<FGuid, FGameFlowTransitionCollection> TransitionCollections;
 
-	UPROPERTY()
+	/* Reset Flow with this property */
+	UPROPERTY(EditAnywhere, Category = "Flow")
 	FGuid ActiveState;
 
 	UPROPERTY()
 	FGuid EntryState;
+
+	uint8 bIsTransitioning : 1;
 };

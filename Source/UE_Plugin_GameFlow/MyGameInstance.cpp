@@ -63,6 +63,8 @@ void UGFS_ShowWidget::OnEnter_Implementation()
 	{
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute Show Widget step when calling Game Flow has no World (%s)"), *flow->GetName());
 	}
+
+	OnComplete(EGFSStatus::Finished);
 }
 
 void UGFS_ShowWidget::OnExit_Implementation()
@@ -85,8 +87,8 @@ void UGFS_ShowWidget::OnExit_Implementation()
 
 				if (bSwitchInputModeToUIOnly)
 				{
-					FInputModeGameOnly imGameOnly;
-					pc->SetInputMode(imGameOnly);
+					FInputModeGameAndUI imGameAndUI;
+					pc->SetInputMode(imGameAndUI);
 				}
 
 				UserWidget->RemoveFromParent();
@@ -98,6 +100,8 @@ void UGFS_ShowWidget::OnExit_Implementation()
 	{
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute Show Widget step when calling Game Flow has no World (%s)"), *flow->GetName());
 	}
+
+	OnComplete(EGFSStatus::Finished);
 }
 
 FText UGFS_ShowWidget::GenerateDescription_Implementation() const
@@ -141,6 +145,8 @@ void UGFS_SaveGame_Load::OnEnter_Implementation()
 	{
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute SaveGame Load step when it has unset SaveGameClass and there is no existing Slot named %s (%s)"), *SlotName, *flow->GetName());
 	}
+
+	OnComplete(EGFSStatus::Finished);
 }
 
 FText UGFS_SaveGame_Load::GenerateDescription_Implementation() const
@@ -173,18 +179,15 @@ void UGFS_Level_Load::OnEnter_Implementation()
 	}
 }
 
-void UGFS_Level_Load::OnWorldContextChanged_Implementation(const bool isOwningStateActive)
+void UGFS_Level_Load::OnWorldContextChanged_Implementation(const bool force)
 {
-	if (isOwningStateActive)
+	UGameFlow* flow = GetOwningState()->GetOwningFlow();
+
+	UWorld* world = flow->GetWorld();
+
+	if (world && !MapToLoad.IsNull() && world->RemovePIEPrefix(world->GetPathName()) == MapToLoad.GetAssetPathString())
 	{
-		UGameFlow* flow = GetOwningState()->GetOwningFlow();
-
-		UWorld* world = flow->GetWorld();
-
-		if (world && !MapToLoad.IsNull() && world->RemovePIEPrefix(world->GetPathName()) == MapToLoad.GetAssetPathString())
-		{
-
-		}
+		OnComplete(EGFSStatus::Finished);
 	}
 }
 
@@ -227,6 +230,8 @@ void UGFS_InputMappingContext_Switch::OnEnter_Implementation()
 	{
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute InputMappingContext Switch step when it has unset InputMappingContext (%s)"), *flow->GetName());
 	}
+
+	OnComplete(EGFSStatus::Finished);
 }
 
 void UGFS_InputMappingContext_Switch::OnExit_Implementation()
@@ -254,6 +259,8 @@ void UGFS_InputMappingContext_Switch::OnExit_Implementation()
 	{
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute InputMappingContext Switch step when it has unset InputMappingContext (%s)"), *flow->GetName());
 	}
+
+	OnComplete(EGFSStatus::Finished);
 }
 
 FText UGFS_InputMappingContext_Switch::GenerateDescription_Implementation() const
@@ -269,7 +276,7 @@ void UMyGameInstance::OnWorldChanged(UWorld* OldWorld, UWorld* NewWorld)
 {
 	if (OldWorld)
 	{
-		MainGameFlow->SetWorldContext(nullptr);
+		MainGameFlow->SetWorldContext(nullptr, true);
 
 		OldWorld->OnWorldBeginPlay.RemoveAll(this);
 	}
@@ -284,7 +291,7 @@ void UMyGameInstance::Shutdown()
 {
 	if (MainGameFlow)
 	{
-		MainGameFlow->ExitFlow();
+		MainGameFlow->ExitFlow(false, true);
 	}
 
 	Super::Shutdown();
@@ -294,11 +301,15 @@ void UMyGameInstance::OnWorldBeginPlay(UWorld* world)
 {
 	if (MainGameFlow)
 	{
-		MainGameFlow->SetWorldContext(world);
+		// If we use OpenLevel in some Step then World will be changed synchronously, so we need to notify Step that World changed
+		// Normally this call will be blicked because Flow still is Transitioning
+		// So we use force param to bypass this logic
+
+		MainGameFlow->SetWorldContext(world, true);
 
 		if (EntryMap.GetAssetPathString() == world->RemovePIEPrefix(world->GetPathName()))
 		{
-			MainGameFlow->EnterFlow();
+			MainGameFlow->EnterFlow(true);
 		}
 	}
 }
