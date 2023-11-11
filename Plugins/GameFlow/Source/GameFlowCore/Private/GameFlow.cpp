@@ -2,19 +2,17 @@
 
 #include "GameFlow.h"
 #include "Engine/World.h"
-#include "Math/NumericLimits.h"
 
 DEFINE_LOG_CATEGORY(LogGameFlow);
-DEFINE_LOG_CATEGORY(LogGameFlowOperations);
 
 int32 LogGameFlowUtils::Depth = 0;
 
-TMap<uint64, FOperationInfo> OperationContext;
+TMap<OperationId, FOperationInfo> OperationContext;
 
 FString LogGameFlowUtils::RepeatTab(int32 num)
 {
 	FString result;
-	for (int32 i = 0; i < num; i++) result.AppendChar(*"\t");
+	for (int32 i = 0; i < num * 4; i++) result.AppendChar(*" ");
 	return result;
 }
 
@@ -51,11 +49,11 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 		{
 			if (status == EGFSStatus::Started)
 			{
-				UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] >>> [%s] in state [%s] {%s}!"), *FDateTime::Now().ToString(), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+				UE_LOG(LogGameFlow, Log, TEXT("[%s][STEP]%s - BEG Step [%s] in state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 			}
 			else if (status == EGFSStatus::Finished)
 			{
-				UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] <<< [%s] in state [%s] {%s}!"), *FDateTime::Now().ToString(), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+				UE_LOG(LogGameFlow, Log, TEXT("[%s][STEP]%s - END Step [%s] in state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 
 				StepIndices.Remove(stepIndex);
 
@@ -66,7 +64,7 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 			}
 			else if (status == EGFSStatus::Failed)
 			{
-				UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] FAIL [%s] in state [%s] {%s}!"), *FDateTime::Now().ToString(), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+				UE_LOG(LogGameFlow, Warning, TEXT("[%s][STEP]%s - ERR Step [%s] in state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 			}
 			else
 			{
@@ -75,12 +73,12 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 		}
 		else
 		{
-			UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant find step [%s] in catching operation {%s}!"), *FDateTime::Now().ToString(), *step->GenerateDescription().ToString(), *flow->GetName());
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][STEP]%s - Cant find step [%s] in catching operation for flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *step->GenerateDescription().ToString(), *flow->GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant find step [%s] in state [%s] {%s}!"), *FDateTime::Now().ToString(), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][STEP]%s - Cant find step [%s] in state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 	}
 }
 
@@ -98,12 +96,12 @@ void UGFS_Base::OnComplete(const EGFSStatus status) const
 		}
 		else
 		{
-			UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant find operation [%d]!"), *FDateTime::Now().ToString(), StepsCatcherOperationId);
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][STEP]%s - Cant exec step [%s] with invalid catching operation for flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GenerateDescription().ToString(), *GetOwningState()->GetOwningFlow()->GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant exec step [%s] without catching operation!"), *FDateTime::Now().ToString(), *GenerateDescription().ToString());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][STEP]%s - Cant exec step [%s] without catching operation for flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GenerateDescription().ToString(), *GetOwningState()->GetOwningFlow()->GetName());
 	}
 }
 
@@ -136,7 +134,7 @@ void UGameFlow::ExecuteOperation(const OperationId& operationId)
 
 			if (UGameFlow* flow = operationInfo.Flow.Get())
 			{
-				UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] >>> [%s] {%s}!"), *FDateTime::Now().ToString(), *StaticEnum<EOperationType>()->GetNameStringByValue(static_cast<int64>(operationInfo.OperationType)), *flow->GetName());
+				UE_LOG(LogGameFlow, Log, TEXT("[%s][OPER]%s - [%s] {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 1), *StaticEnum<EOperationType>()->GetNameStringByValue(static_cast<int64>(operationInfo.OperationType)), *flow->GetName());
 
 				switch (operationInfo.OperationType)
 				{
@@ -161,12 +159,12 @@ void UGameFlow::ExecuteOperation(const OperationId& operationId)
 			}
 			else
 			{
-				UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant exec operation [%d] without owning flow!"), *FDateTime::Now().ToString(), operationId);
+				UE_LOG(LogGameFlow, Warning, TEXT("[%s][OPER]%s - Cant exec operation [%d] without owning flow!"), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 1), *FDateTime::Now().ToString(), operationId);
 			}
 		}
 		else
 		{
-			UE_LOG(LogGameFlowOperations, Log, TEXT("[%s] Cant find operation [%d]!"), *FDateTime::Now().ToString(), operationId);
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][OPER]%s - Cant find operation [%d]!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 1), operationId);
 		}
 	}
 }
@@ -226,7 +224,7 @@ void UGameFlow::OnEnterState_Set(const FOperationInfo& operationInfo)
 	UGameFlowState* stateObject = flow->States[operationInfo.State];
 
 	LogGameFlowUtils::Depth++;
-	UE_LOG(LogGameFlow, Log, TEXT("[%s]%s--> %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->StateTitle.ToString(), *flow->GetName());
+	UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s--> %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->StateTitle.ToString(), *flow->GetName());
 
 	operationInfo.ActiveState = operationInfo.State;
 
@@ -274,7 +272,7 @@ void UGameFlow::OnEnterState_SubFlow_Set(const FOperationInfo& operationInfo)
 	UGameFlowState* stateObject = flow->States[operationInfo.State];
 
 	LogGameFlowUtils::Depth++;
-	UE_LOG(LogGameFlow, Log, TEXT("[%s]%s>>> %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->SubFlow->GetName(), *flow->GetName());
+	UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s==> %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->SubFlow->GetName(), *flow->GetName());
 
 	ExecuteOperation(operationInfo.NextOperationId);
 }
@@ -458,7 +456,7 @@ void UGameFlow::OnExitState_SubFlow_Set(const FOperationInfo& operationInfo)
 	UGameFlow* flow = operationInfo.Flow.Get();
 	UGameFlowState* stateObject = flow->States[operationInfo.State];
 
-	UE_LOG(LogGameFlow, Log, TEXT("[%s]%s<<< %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->SubFlow->GetName(), *flow->GetName());
+	UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s<== %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->SubFlow->GetName(), *flow->GetName());
 	LogGameFlowUtils::Depth--;
 
 	ExecuteOperation(operationInfo.NextOperationId);
@@ -506,7 +504,7 @@ void UGameFlow::OnExitState_Set(const FOperationInfo& operationInfo)
 
 	operationInfo.ActiveState.Invalidate();
 
-	UE_LOG(LogGameFlow, Log, TEXT("[%s]%s<-- %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->StateTitle.ToString(), *flow->GetName());
+	UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s<-- %s {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *stateObject->StateTitle.ToString(), *flow->GetName());
 	LogGameFlowUtils::Depth--;
 
 	ExecuteOperation(operationInfo.NextOperationId);
@@ -527,7 +525,7 @@ void UGameFlow::OnAutoTransition(const FOperationInfo& operationInfo)
 		}
 		else
 		{
-			UE_LOG(LogGameFlow, Warning, TEXT("Cant make transition in flow that is not active {%s}!"), *flow->GetName());
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is not active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *flow->GetName());
 		}
 	}
 	else
@@ -664,7 +662,7 @@ void UGameFlow::EnterFlow(const bool executeSteps)
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant proceed with flow that is transitioning {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant enter flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 	}
 }
 
@@ -676,7 +674,7 @@ void UGameFlow::ExitFlow(const bool executeSteps, const bool resetSharedSubFlows
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant proceed with flow that is transitioning {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant exit flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 	}
 }
 
@@ -700,17 +698,17 @@ void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool
 			}
 			else
 			{
-				UE_LOG(LogGameFlow, Warning, TEXT("Cant make transition in flow that is not active {%s}!"), *GetName());
+				UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is not active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 			}
 		}
 		else
 		{
-			UE_LOG(LogGameFlow, Warning, TEXT("Cant make transition in flow without Transition Key {%s}!"), *GetName());
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow without Transition Key {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant proceed with flow that is transitioning {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 	}
 }
 
@@ -738,17 +736,17 @@ void UGameFlow::EnterFlow(FGuid& activeState, const OperationId& nextOperationId
 			}
 			else
 			{
-				UE_LOG(LogGameFlow, Warning, TEXT("Cant find state [%s] in flow {%s}!"), *EntryState.ToString(), *GetName());
+				UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant find state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *EntryState.ToString(), *GetName());
 			}
 		}
 		else
 		{
-			UE_LOG(LogGameFlow, Warning, TEXT("Cant enter flow without Entry state {%s}!"), *GetName());
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant find Entry state in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant enter flow that is active {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant enter flow that is active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 
 		ExecuteOperation(nextOperationId);
 	}
@@ -776,12 +774,12 @@ void UGameFlow::ExitFlow(FGuid& activeState, const OperationId& nextOperationId,
 		}
 		else
 		{
-			UE_LOG(LogGameFlow, Warning, TEXT("Cant find state [%s] in flow {%s}!"), *activeState.ToString(), *GetName());
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant find state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *activeState.ToString(), *GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant exit flow that is not active {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant exit flow that is not active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 
 		ExecuteOperation(nextOperationId);
 	}
@@ -855,6 +853,6 @@ void UGameFlow::SetWorldPtr(FGuid& activeState, UWorld* world, const bool force)
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("Cant proceed with flow that is transitioning {%s}!"), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant set world in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 	}
 }

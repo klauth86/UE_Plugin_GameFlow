@@ -9,7 +9,6 @@
 class UEdGraph;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGameFlow, Log, All);
-DECLARE_LOG_CATEGORY_EXTERN(LogGameFlowOperations, Log, All);
 
 namespace LogGameFlowUtils
 {
