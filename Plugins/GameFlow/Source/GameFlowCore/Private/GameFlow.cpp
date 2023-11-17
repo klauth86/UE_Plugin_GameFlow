@@ -121,7 +121,7 @@ UGameFlowState::UGameFlowState(const FObjectInitializer& ObjectInitializer) : Su
 
 UGameFlow::UGameFlow(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	bIsTransitioning = 0;
+	TransitionOperationId = OperationId();
 }
 
 void UGameFlow::ExecuteOperation(const OperationId& operationId)
@@ -153,8 +153,10 @@ void UGameFlow::ExecuteOperation(const OperationId& operationId)
 				case EOperationType::ExitState_Set: return OnExitState_Set(operationInfo);
 				case EOperationType::StepsCatcher: return OnStepsCatcher(operationInfo);
 
-				case EOperationType::EnterTransition: return OnEnterTransition(operationInfo);;
-				case EOperationType::ExitTransition: return OnExitTransition(operationInfo);
+				case EOperationType::EnterTransition: return OnEnterTransition(operationId, operationInfo);
+				case EOperationType::ExitTransition: return OnExitTransition(operationId, operationInfo);
+
+				case EOperationType::MakeTransition_Enqueued: return OnMakeTransitionEnqueued(operationInfo);
 				}
 			}
 			else
@@ -179,7 +181,7 @@ void UGameFlow::OnEnterState(const FOperationInfo& operationInfo)
 	if (stateObject->TransitionKey)
 	{
 		const OperationId autoTransitionOperationId = GetOperationId();
-		FOperationInfo autoTransitionOperationInfo = FOperationInfo(EOperationType::AutoTransition, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo autoTransitionOperationInfo = FOperationInfo(EOperationType::AutoTransition, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(autoTransitionOperationId, autoTransitionOperationInfo);
 
 		nextOperationId = autoTransitionOperationId;
@@ -188,22 +190,22 @@ void UGameFlow::OnEnterState(const FOperationInfo& operationInfo)
 	if (stateObject->SubFlow)
 	{
 		const OperationId subFlowOperationId = GetOperationId();
-		FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::EnterState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::EnterState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(subFlowOperationId, subFlowOperationInfo);
 
 		nextOperationId = GetOperationId();
-		FOperationInfo enterStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::EnterState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, subFlowOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo enterStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::EnterState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, subFlowOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(nextOperationId, enterStateSubFlowSetOperationInfo);
 	}
 
 	if (operationInfo.ExecuteSteps)
 	{
 		const OperationId stepsOperationId = GetOperationId();
-		FOperationInfo stepsOperationInfo = FOperationInfo(EOperationType::EnterState_Steps, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo stepsOperationInfo = FOperationInfo(EOperationType::EnterState_Steps, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(stepsOperationId, stepsOperationInfo);
 
 		const OperationId setOperation = GetOperationId();
-		FOperationInfo setOperationInfo = FOperationInfo(EOperationType::EnterState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, stepsOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo setOperationInfo = FOperationInfo(EOperationType::EnterState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, stepsOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(setOperation, setOperationInfo);
 
 		ExecuteOperation(setOperation);
@@ -211,7 +213,7 @@ void UGameFlow::OnEnterState(const FOperationInfo& operationInfo)
 	else
 	{
 		const OperationId setOperation = GetOperationId();
-		FOperationInfo setOperationInfo = FOperationInfo(EOperationType::EnterState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo setOperationInfo = FOperationInfo(EOperationType::EnterState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, nextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(setOperation, setOperationInfo);
 
 		ExecuteOperation(setOperation);
@@ -239,7 +241,7 @@ void UGameFlow::OnEnterState_Steps(const FOperationInfo& operationInfo)
 	if (stateObject->Steps.Num() > 0)
 	{
 		const OperationId stepsCatcherOperationId = GetOperationId();
-		FOperationInfo& stepsCatcherOperationInfo = OperationContext.Emplace(stepsCatcherOperationId, FOperationInfo(EOperationType::StepsCatcher, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows));
+		FOperationInfo& stepsCatcherOperationInfo = OperationContext.Emplace(stepsCatcherOperationId, FOperationInfo(EOperationType::StepsCatcher, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr));
 
 		for (int32 i = 0; i < stateObject->Steps.Num(); i++)
 		{
@@ -289,11 +291,11 @@ void UGameFlow::OnEnterState_SubFlow(const FOperationInfo& operationInfo)
 			// Exit Sub Flow and then enter Sub Flow
 
 			const OperationId enterStateOperationId = GetOperationId();
-			FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 			const OperationId exitStateOperationId = GetOperationId();
-			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlowActiveState, enterStateOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlowActiveState, enterStateOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 			ExecuteOperation(exitStateOperationId);
@@ -302,7 +304,7 @@ void UGameFlow::OnEnterState_SubFlow(const FOperationInfo& operationInfo)
 		{
 			// Enter Sub Flow
 			const OperationId enterStateOperationId = GetOperationId();
-			FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 			ExecuteOperation(enterStateOperationId);
@@ -317,11 +319,11 @@ void UGameFlow::OnEnterState_SubFlow(const FOperationInfo& operationInfo)
 				// Exit Sub Flow and then Enter Sub Flow
 
 				const OperationId enterStateOperationId = GetOperationId();
-				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 				OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 				const OperationId exitStateOperationId = GetOperationId();
-				FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->ActiveState, enterStateOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+				FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->ActiveState, enterStateOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 				OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 				ExecuteOperation(exitStateOperationId);
@@ -331,7 +333,7 @@ void UGameFlow::OnEnterState_SubFlow(const FOperationInfo& operationInfo)
 				// Enter Sub Flow
 
 				const OperationId enterStateOperationId = GetOperationId();
-				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 				OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 				ExecuteOperation(enterStateOperationId);
@@ -348,7 +350,7 @@ void UGameFlow::OnEnterState_SubFlow(const FOperationInfo& operationInfo)
 				// Enter Sub Flow
 
 				const OperationId enterStateOperationId = GetOperationId();
-				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->EntryState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 				OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 				ExecuteOperation(enterStateOperationId);
@@ -363,23 +365,23 @@ void UGameFlow::OnExitState(const FOperationInfo& operationInfo)
 	UGameFlowState* stateObject = flow->States[operationInfo.State];
 
 	const OperationId setOperationId = GetOperationId();
-	FOperationInfo setOperationInfo = FOperationInfo(EOperationType::ExitState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+	FOperationInfo setOperationInfo = FOperationInfo(EOperationType::ExitState_Set, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 	OperationContext.Add(setOperationId, setOperationInfo);
 
 	if (operationInfo.ExecuteSteps)
 	{
 		const OperationId stepsOperationId = GetOperationId();
-		FOperationInfo stepsOperationInfo = FOperationInfo(EOperationType::ExitState_Steps, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, setOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+		FOperationInfo stepsOperationInfo = FOperationInfo(EOperationType::ExitState_Steps, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, setOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 		OperationContext.Add(stepsOperationId, stepsOperationInfo);
 
 		if (stateObject->SubFlow)
 		{
 			const OperationId exitStateSubFlowSetOperationId = GetOperationId();
-			FOperationInfo exitStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, stepsOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo exitStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, stepsOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateSubFlowSetOperationId, exitStateSubFlowSetOperationInfo);
 
 			const OperationId subFlowOperationId = GetOperationId();
-			FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, exitStateSubFlowSetOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, exitStateSubFlowSetOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(subFlowOperationId, subFlowOperationInfo);
 
 			ExecuteOperation(subFlowOperationId);
@@ -394,11 +396,11 @@ void UGameFlow::OnExitState(const FOperationInfo& operationInfo)
 		if (stateObject->SubFlow)
 		{
 			const OperationId exitStateSubFlowSetOperationId = GetOperationId();
-			FOperationInfo exitStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, setOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo exitStateSubFlowSetOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow_Set, flow->ActiveState, operationInfo.Flow, operationInfo.State, setOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateSubFlowSetOperationId, exitStateSubFlowSetOperationInfo);
 
 			const OperationId subFlowOperationId = GetOperationId();
-			FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, exitStateSubFlowSetOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo subFlowOperationInfo = FOperationInfo(EOperationType::ExitState_SubFlow, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, exitStateSubFlowSetOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(subFlowOperationId, subFlowOperationInfo);
 
 			ExecuteOperation(subFlowOperationId);
@@ -422,7 +424,7 @@ void UGameFlow::OnExitState_SubFlow(const FOperationInfo& operationInfo)
 			// Exit Sub Flow
 
 			const OperationId exitStateOperationId = GetOperationId();
-			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlowActiveState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlowActiveState, stateObject->SubFlow, stateObject->SubFlowActiveState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 			ExecuteOperation(exitStateOperationId);
@@ -439,7 +441,7 @@ void UGameFlow::OnExitState_SubFlow(const FOperationInfo& operationInfo)
 			// Exit Sub Flow
 
 			const OperationId exitStateOperationId = GetOperationId();
-			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->ActiveState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, stateObject->SubFlow->ActiveState, stateObject->SubFlow, stateObject->SubFlow->ActiveState, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 			ExecuteOperation(exitStateOperationId);
@@ -470,7 +472,7 @@ void UGameFlow::OnExitState_Steps(const FOperationInfo& operationInfo)
 	if (stateObject->Steps.Num() > 0)
 	{
 		const OperationId stepsCatcherOperationId = GetOperationId();
-		FOperationInfo& stepsCatcherOperationInfo = OperationContext.Emplace(stepsCatcherOperationId, FOperationInfo(EOperationType::StepsCatcher, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows));
+		FOperationInfo& stepsCatcherOperationInfo = OperationContext.Emplace(stepsCatcherOperationId, FOperationInfo(EOperationType::StepsCatcher, operationInfo.ActiveState, operationInfo.Flow, operationInfo.State, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows, nullptr));
 
 		for (int32 i = stateObject->Steps.Num() - 1; i >= 0; i--)
 		{
@@ -519,7 +521,7 @@ void UGameFlow::OnAutoTransition(const FOperationInfo& operationInfo)
 	{
 		if (operationInfo.ActiveState.IsValid())
 		{
-			const OperationId autoTransitionOperationId = flow->CreateTransitionOperation(stateObject->TransitionKey, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
+			const OperationId autoTransitionOperationId = flow->CreateMakeTransitionOperation(stateObject->TransitionKey, operationInfo.NextOperationId, operationInfo.ExecuteSteps, operationInfo.ResetSharedSubFlows);
 
 			ExecuteOperation(autoTransitionOperationId);
 		}
@@ -534,24 +536,32 @@ void UGameFlow::OnAutoTransition(const FOperationInfo& operationInfo)
 	}
 }
 
-void UGameFlow::OnEnterTransition(const FOperationInfo& operationInfo)
+void UGameFlow::OnEnterTransition(const OperationId operationId, const FOperationInfo& operationInfo)
 {
 	UGameFlow* flow = operationInfo.Flow.Get();
 	UGameFlowState* stateObject = operationInfo.ActiveState.IsValid() ? flow->States[operationInfo.ActiveState] : nullptr;
 
-	flow->bIsTransitioning = 1;
+	flow->TransitionOperationId = operationId;
 
 	ExecuteOperation(operationInfo.NextOperationId);
 }
 
-void UGameFlow::OnExitTransition(const FOperationInfo& operationInfo)
+void UGameFlow::OnExitTransition(const OperationId operationId, const FOperationInfo& operationInfo)
 {
 	UGameFlow* flow = operationInfo.Flow.Get();
 	UGameFlowState* stateObject = operationInfo.ActiveState.IsValid() ? flow->States[operationInfo.ActiveState] : nullptr;
 
-	flow->bIsTransitioning = 0;
+	flow->TransitionOperationId = OperationId();
 
 	ExecuteOperation(operationInfo.NextOperationId);
+}
+
+void UGameFlow::OnMakeTransitionEnqueued(const FOperationInfo& operationInfo)
+{
+	UGameFlow* flow = operationInfo.Flow.Get();
+	UGameFlowTransitionKey* transitionKey = operationInfo.TransitionKey.Get();
+
+	flow->MakeTransition(transitionKey, true, true);
 }
 
 #if WITH_EDITORONLY_DATA
@@ -654,9 +664,11 @@ void UGameFlow::FindStateByTitle(FName stateTitle, TArray<UGameFlowState*>& outS
 	}
 }
 
+bool UGameFlow::IsTransitioning() const { if (TransitionOperationId) { return true; } else { return false; } }
+
 void UGameFlow::EnterFlow(const bool executeSteps)
 {
-	if (!bIsTransitioning)
+	if (!TransitionOperationId)
 	{
 		EnterFlow(ActiveState, OperationId(), executeSteps);
 	}
@@ -668,7 +680,7 @@ void UGameFlow::EnterFlow(const bool executeSteps)
 
 void UGameFlow::ExitFlow(const bool executeSteps, const bool resetSharedSubFlows)
 {
-	if (!bIsTransitioning)
+	if (!TransitionOperationId)
 	{
 		ExitFlow(ActiveState, OperationId(), executeSteps, resetSharedSubFlows);
 	}
@@ -678,38 +690,66 @@ void UGameFlow::ExitFlow(const bool executeSteps, const bool resetSharedSubFlows
 	}
 }
 
-void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps)
+void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued)
 {
-	if (!bIsTransitioning)
+	if (!TransitionOperationId)
 	{
-		if (transitionKey)
+		if (const OperationId operationId = MakeTransition_Internal(transitionKey, executeSteps, false))
 		{
-			if (ActiveState.IsValid())
-			{
-				const OperationId exitTransitionOperationId = GetOperationId();
-				FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, ActiveState, this, ActiveState, OperationId(), executeSteps, false);
-				OperationContext.Add(exitTransitionOperationId, exitTransitionOperationInfo);
-
-				const OperationId enterTransitionOperationId = GetOperationId();
-				FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, ActiveState, this, ActiveState, CreateTransitionOperation(transitionKey, exitTransitionOperationId, executeSteps, false), executeSteps, false);
-				OperationContext.Add(enterTransitionOperationId, enterTransitionOperationInfo);
-
-				ExecuteOperation(enterTransitionOperationId);
-			}
-			else
-			{
-				UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is not active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
-			}
+			ExecuteOperation(operationId);
 		}
-		else
+	}
+	else if (isEnqueued)
+	{
+		if (const OperationId operationId = MakeTransition_Internal(transitionKey, executeSteps, true))
 		{
-			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow without Transition Key {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
+			OperationId transitionOperationId = TransitionOperationId;
+			
+			while (OperationContext[transitionOperationId].NextOperationId)
+			{
+				transitionOperationId = OperationContext[transitionOperationId].NextOperationId;
+			}
+
+			OperationContext[transitionOperationId].NextOperationId = operationId;
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant make transition in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
 	}
+}
+
+const OperationId UGameFlow::MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued)
+{
+	if (transitionKey)
+	{
+		if (ActiveState.IsValid())
+		{
+			const OperationId exitTransitionOperationId = GetOperationId();
+			FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, ActiveState, this, ActiveState, OperationId(), executeSteps, false, nullptr);
+			OperationContext.Add(exitTransitionOperationId, exitTransitionOperationInfo);
+
+			const OperationId makeTransitionOperationId = isEnqueued
+				? CreateMakeTransitionOperation_Enqueued(transitionKey, exitTransitionOperationId, executeSteps, false)
+				: CreateMakeTransitionOperation(transitionKey, exitTransitionOperationId, executeSteps, false);
+
+			const OperationId enterTransitionOperationId = GetOperationId();
+			FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, ActiveState, this, ActiveState, makeTransitionOperationId, executeSteps, false, nullptr);
+			OperationContext.Add(enterTransitionOperationId, enterTransitionOperationInfo);
+
+			return enterTransitionOperationId;
+		}
+		else
+		{
+			UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow that is not active {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
+		}
+	}
+	else
+	{
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant transition in flow without Transition Key {%s}!"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth), *GetName());
+	}
+
+	return OperationId();
 }
 
 void UGameFlow::EnterFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps)
@@ -721,15 +761,15 @@ void UGameFlow::EnterFlow(FGuid& activeState, const OperationId& nextOperationId
 			if (States.Contains(EntryState))
 			{
 				const OperationId exitTransitionOperationId = GetOperationId();
-				FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, activeState, this, activeState, nextOperationId, executeSteps, false);
+				FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, activeState, this, activeState, nextOperationId, executeSteps, false, nullptr);
 				OperationContext.Add(exitTransitionOperationId, exitTransitionOperationInfo);
 
 				const OperationId enterStateOperationId = GetOperationId();
-				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, activeState, this, EntryState, exitTransitionOperationId, executeSteps, false);
+				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, activeState, this, EntryState, exitTransitionOperationId, executeSteps, false, nullptr);
 				OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 				const OperationId enterTransitionOperationId = GetOperationId();
-				FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, activeState, this, activeState, enterStateOperationId, executeSteps, false);
+				FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, activeState, this, activeState, enterStateOperationId, executeSteps, false, nullptr);
 				OperationContext.Add(enterTransitionOperationId, enterTransitionOperationInfo);
 
 				ExecuteOperation(enterTransitionOperationId);
@@ -759,15 +799,15 @@ void UGameFlow::ExitFlow(FGuid& activeState, const OperationId& nextOperationId,
 		if (States.Contains(activeState))
 		{
 			const OperationId exitTransitionOperationId = GetOperationId();
-			FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, activeState, this, activeState, nextOperationId, executeSteps, resetSharedSubFlows);
+			FOperationInfo exitTransitionOperationInfo = FOperationInfo(EOperationType::ExitTransition, activeState, this, activeState, nextOperationId, executeSteps, resetSharedSubFlows, nullptr);
 			OperationContext.Add(exitTransitionOperationId, exitTransitionOperationInfo);
 
 			const OperationId exitStateOperationId = GetOperationId();
-			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, activeState, this, activeState, exitTransitionOperationId, executeSteps, resetSharedSubFlows);
+			FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, activeState, this, activeState, exitTransitionOperationId, executeSteps, resetSharedSubFlows, nullptr);
 			OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 			const OperationId enterTransitionOperationId = GetOperationId();
-			FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, activeState, this, activeState, exitStateOperationId, executeSteps, resetSharedSubFlows);
+			FOperationInfo enterTransitionOperationInfo = FOperationInfo(EOperationType::EnterTransition, activeState, this, activeState, exitStateOperationId, executeSteps, resetSharedSubFlows, nullptr);
 			OperationContext.Add(enterTransitionOperationId, enterTransitionOperationInfo);
 
 			ExecuteOperation(enterTransitionOperationId);
@@ -785,13 +825,13 @@ void UGameFlow::ExitFlow(FGuid& activeState, const OperationId& nextOperationId,
 	}
 }
 
-OperationId UGameFlow::CreateTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows)
+OperationId UGameFlow::CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows)
 {
 	if (States[ActiveState]->SubFlow)
 	{
 		// Try to find transition in Sub Flow
 
-		if (const OperationId subFlowTransitionId = States[ActiveState]->SubFlow->CreateTransitionOperation(transitionKey, nextOperationId, executeSteps, resetSharedSubFlows))
+		if (const OperationId subFlowTransitionId = States[ActiveState]->SubFlow->CreateMakeTransitionOperation(transitionKey, nextOperationId, executeSteps, resetSharedSubFlows))
 		{
 			return subFlowTransitionId;
 		}
@@ -810,11 +850,11 @@ OperationId UGameFlow::CreateTransitionOperation(UGameFlowTransitionKey* transit
 				check(transitionEntry.Key != ActiveState); // Cant have self transitions
 
 				const OperationId enterStateOperationId = GetOperationId();
-				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, ActiveState, this, transitionEntry.Key, nextOperationId, executeSteps, resetSharedSubFlows);
+				FOperationInfo enterStateOperationInfo = FOperationInfo(EOperationType::EnterState, ActiveState, this, transitionEntry.Key, nextOperationId, executeSteps, resetSharedSubFlows, nullptr);
 				OperationContext.Add(enterStateOperationId, enterStateOperationInfo);
 
 				const OperationId exitStateOperationId = GetOperationId();
-				FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, ActiveState, this, ActiveState, enterStateOperationId, executeSteps, resetSharedSubFlows);
+				FOperationInfo exitStateOperationInfo = FOperationInfo(EOperationType::ExitState, ActiveState, this, ActiveState, enterStateOperationId, executeSteps, resetSharedSubFlows, nullptr);
 				OperationContext.Add(exitStateOperationId, exitStateOperationInfo);
 
 				return exitStateOperationId;
@@ -825,9 +865,18 @@ OperationId UGameFlow::CreateTransitionOperation(UGameFlowTransitionKey* transit
 	return OperationId();
 }
 
+OperationId UGameFlow::CreateMakeTransitionOperation_Enqueued(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows)
+{
+	const OperationId makeTransitionOperationId = GetOperationId();
+	FOperationInfo makeTransitionOperationInfo = FOperationInfo(EOperationType::MakeTransition_Enqueued, ActiveState, this, ActiveState, nextOperationId, executeSteps, resetSharedSubFlows, transitionKey);
+	OperationContext.Add(makeTransitionOperationId, makeTransitionOperationInfo);
+
+	return makeTransitionOperationId;
+}
+
 void UGameFlow::SetWorldPtr(FGuid& activeState, UWorld* world, const bool force)
 {
-	if (!bIsTransitioning || force)
+	if (!TransitionOperationId || force)
 	{
 		WorldPtr = world;
 
