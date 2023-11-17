@@ -61,21 +61,24 @@ enum class EOperationType : uint8
 
 	EnterTransition,
 	ExitTransition,
+
+	MakeTransition_Enqueued
 };
 
 struct FOperationInfo
 {
-	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows)
-		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSharedSubFlows(resetSharedSubFlows)
+	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows, UGameFlowTransitionKey* transitionKey)
+		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSharedSubFlows(resetSharedSubFlows), TransitionKey(transitionKey)
 	{}
 
 	const EOperationType OperationType;
 	FGuid& ActiveState;
 	TWeakObjectPtr<UGameFlow> Flow;
 	const FGuid State;
-	const OperationId NextOperationId;
+	OperationId NextOperationId;
 	const uint8 ExecuteSteps : 1;
 	const uint8 ResetSharedSubFlows : 1;
+	TWeakObjectPtr<UGameFlowTransitionKey> TransitionKey;
 
 	TSet<int32> StepIndices;
 
@@ -306,9 +309,11 @@ public:
 
 	static void OnAutoTransition(const FOperationInfo& operationInfo);
 
-	static void OnEnterTransition(const FOperationInfo& operationInfo);
+	static void OnEnterTransition(const OperationId operationId, const FOperationInfo& operationInfo);
 
-	static void OnExitTransition(const FOperationInfo& operationInfo);
+	static void OnExitTransition(const OperationId operationId, const FOperationInfo& operationInfo);
+
+	static void OnMakeTransitionEnqueued(const FOperationInfo& operationInfo);
 
 #if WITH_EDITORONLY_DATA
 
@@ -343,7 +348,7 @@ public:
 
 	/* Returns true if Flow is transitioning */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	bool IsTransitioning() const { return bIsTransitioning; }
+	bool IsTransitioning() const;
 
 	/* Enters Flow */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
@@ -355,7 +360,7 @@ public:
 
 	/* Makes transition by Transition Key */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
 
 	/* Sets World Context for Flow */
 	UFUNCTION(BlueprintCallable, Category = "Flow")
@@ -365,11 +370,15 @@ public:
 
 protected:
 	
+	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+
 	void EnterFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps);
 
 	void ExitFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
 
-	OperationId CreateTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
+	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
+
+	OperationId CreateMakeTransitionOperation_Enqueued(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
@@ -391,5 +400,5 @@ protected:
 	UPROPERTY()
 	FGuid EntryState;
 
-	uint8 bIsTransitioning : 1;
+	OperationId TransitionOperationId;
 };
