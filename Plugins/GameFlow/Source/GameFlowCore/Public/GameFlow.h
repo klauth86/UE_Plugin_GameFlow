@@ -107,7 +107,7 @@ public:
 
 	virtual void SetValue_Implementation(const FString& key, UObject* value) {}
 
-	/* Gets Value by Key */
+	/* Gets Value for Key */
 	UFUNCTION(BlueprintNativeEvent, Category = "Flow Context")
 	UObject* GetValue(const FString& key) const;
 
@@ -184,7 +184,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	UGameFlowState* GetOwningState() const { return GetTypedOuter<UGameFlowState>(); }
 
-	/* Notifies owning State when Step enter/exit execution is complete */
+	/* Notifies owning State when Step enter/exit execution is finished */
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	void OnComplete(const EGFSStatus status) const;
 
@@ -342,27 +342,54 @@ public:
 
 	const UGameFlowState* GetStateObject(const FGuid& state) const { return States.Contains(state) ? States[state] : nullptr; }
 
-	/* Finds States by title */
+	/**
+	* Finds States by title
+	*
+	* @param stateTitle				State Title to search for
+	* @param outStateObjects		Collection with search results
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void FindStateByTitle(FName stateTitle, TArray<UGameFlowState*>& outStateObjects) const;
 
-	/* Returns true if Flow is transitioning */
+	/**
+	* Returns true if Flow is transitioning
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	bool IsTransitioning() const;
 
-	/* Enters Flow */
+	/**
+	* Enters Flow
+	*
+	* @param executeSteps			If true, this transition will execute steps
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void EnterFlow(const bool executeSteps);
 
-	/* Exits Flow */
+	/**
+	* Exits Flow
+	*
+	* @param executeSteps			If true, this transition will execute steps
+	* @param resetSharedSubFlows	if true, this transition will reset Shared Flow if it is set up in active State
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void ExitFlow(const bool executeSteps, const bool resetSharedSubFlows);
 
-	/* Makes transition by Transition Key */
+	/**
+	* Makes transition by Transition Key
+	*
+	* @param transitionKey			Transition Key
+	* @param executeSteps			If true, this transition will execute steps
+	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool executeAsQueued);
 
-	/* Sets World Context for Flow */
+	/**
+	* Sets World Context for Flow
+	*
+	* @param worldContextObject		World Context to set
+	* @param force					if true, World Context will be set even if Flow is transitioning
+	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void SetWorldContext(UObject* worldContextObject, const bool force) { SetWorldPtr(ActiveState, worldContextObject ? worldContextObject->GetWorld() : nullptr, force); }
 
@@ -370,15 +397,13 @@ public:
 
 protected:
 	
-	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool executeAsQueued);
 
 	void EnterFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps);
 
 	void ExitFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
 
 	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
-
-	OperationId CreateMakeTransitionOperation_Enqueued(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
@@ -400,5 +425,5 @@ protected:
 	UPROPERTY()
 	FGuid EntryState;
 
-	OperationId TransitionOperationId;
+	OperationId ExitTransitionOperationId;
 };
