@@ -29,7 +29,8 @@ enum class EGFSStatus : uint8
 	InProgress,
 	Finished,
 
-	Failed
+	Failed,
+	Cancelled
 };
 
 //------------------------------------------------------
@@ -59,16 +60,18 @@ enum class EOperationType : uint8
 
 	StepsCatcher,
 
-	EnterTransition,
-	ExitTransition,
+	MakeTransition_Enqueued,
 
-	MakeTransition_Enqueued
+	Reset,
+	ResetSubFlows,
+
+	TransitionComplete,
 };
 
 struct FOperationInfo
 {
-	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows, UGameFlowTransitionKey* transitionKey)
-		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSharedSubFlows(resetSharedSubFlows), TransitionKey(transitionKey)
+	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSubFlow, UGameFlowTransitionKey* transitionKey)
+		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSubFlow(resetSubFlow), TransitionKey(transitionKey)
 	{}
 
 	const EOperationType OperationType;
@@ -77,7 +80,7 @@ struct FOperationInfo
 	const FGuid State;
 	OperationId NextOperationId;
 	const uint8 ExecuteSteps : 1;
-	const uint8 ResetSharedSubFlows : 1;
+	const uint8 ResetSubFlow : 1;
 	TWeakObjectPtr<UGameFlowTransitionKey> TransitionKey;
 
 	TSet<int32> StepIndices;
@@ -168,6 +171,12 @@ public:
 
 	virtual void OnExit_Implementation() { OnComplete(EGFSStatus::Finished); }
 
+	/* Executed when owning/parent Flow is reset */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
+	void OnCancel();
+
+	virtual void OnCancel_Implementation() { OnComplete(EGFSStatus::Cancelled); }
+
 	/* Executed when owning Flow World Context is changed */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnWorldContextChanged(const bool force);
@@ -184,7 +193,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	UGameFlowState* GetOwningState() const { return GetTypedOuter<UGameFlowState>(); }
 
-	/* Notifies owning State when Step enter/exit execution is finished */
+	/* Notifies owning State when Step enter/exit execution is complete */
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	void OnComplete(const EGFSStatus status) const;
 
@@ -283,6 +292,8 @@ class GAMEFLOWCORE_API UGameFlow : public UObject
 
 public:
 
+	static void CancelOperation(const OperationId& operationId, const OperationId& nextOperationId);
+
 	static void ExecuteOperation(const OperationId& operationId);
 
 	static void OnEnterState(const FOperationInfo& operationInfo);
@@ -309,11 +320,17 @@ public:
 
 	static void OnAutoTransition(const FOperationInfo& operationInfo);
 
-	static void OnEnterTransition(const OperationId operationId, const FOperationInfo& operationInfo);
-
-	static void OnExitTransition(const OperationId operationId, const FOperationInfo& operationInfo);
-
 	static void OnMakeTransitionEnqueued(const FOperationInfo& operationInfo);
+
+	static void OnReset(const FOperationInfo& operationInfo);
+
+	static void OnResetSubFlows(const FOperationInfo& operationInfo);
+
+	static void OnTransitionComplete(const FOperationInfo& operationInfo);
+
+	static void OnCancel_State_Steps(const FOperationInfo& operationInfo, const OperationId& operationId);
+
+	static void OnCancel_State_SubFlow(const FOperationInfo& operationInfo, const OperationId& operationId);
 
 #if WITH_EDITORONLY_DATA
 
@@ -375,6 +392,14 @@ public:
 	void ExitFlow(const bool executeSteps, const bool resetSharedSubFlows);
 
 	/**
+	* Resets Flow
+	*
+	* @param resetAnySubFlow		If true, all Sub Flows that are set up on any State of this Flow will also be reset
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	void ResetFlow(const bool resetAnySubFlow) { ResetFlow(ActiveState, resetAnySubFlow, OperationId()); }
+
+	/**
 	* Makes transition by Transition Key
 	*
 	* @param transitionKey			Transition Key
@@ -382,7 +407,7 @@ public:
 	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool executeAsQueued);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
 
 	/**
 	* Sets World Context for Flow
@@ -396,20 +421,17 @@ public:
 	virtual UWorld* GetWorld() const override { return WorldPtr.Get(); }
 
 protected:
-	
-	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool executeAsQueued);
 
-	void EnterFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps);
+	void ResetFlow(FGuid& activeState, const bool resetAnySubFlow, const OperationId& nextOperationId);
 
-	void ExitFlow(FGuid& activeState, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
+	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
 
-	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetSharedSubFlows);
+	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetActiveSubFlow);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
 protected:
-
-	UPROPERTY(Transient)
+	
 	TWeakObjectPtr<UWorld> WorldPtr;
 
 	UPROPERTY()
@@ -418,12 +440,9 @@ protected:
 	UPROPERTY()
 	TMap<FGuid, FGameFlowTransitionCollection> TransitionCollections;
 
-	/* Reset Flow with this property */
-	UPROPERTY(EditAnywhere, Category = "Flow")
-	FGuid ActiveState;
-
 	UPROPERTY()
 	FGuid EntryState;
 
-	OperationId ExitTransitionOperationId;
+	FGuid ActiveState;
+	OperationId ActiveOperationId;
 };
