@@ -269,6 +269,8 @@ public:
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow != nullptr && !bInstancedSubFlow", EditConditionHides))
 	uint8 bResetSubFlowOnExitState : 1;
 
+	uint8 bSubFlow_Set : 1;
+
 	UPROPERTY()
 	FGuid SubFlowActiveState;
 
