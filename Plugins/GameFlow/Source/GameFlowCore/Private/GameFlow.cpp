@@ -34,6 +34,26 @@ OperationId GetOperationId()
 // FOperationInfo
 //------------------------------------------------------
 
+FString GetStepsPhaseString(const EOperationType operationType)
+{
+	FString result = "";
+
+	if (operationType == EOperationType::EnterState_Steps)
+	{
+		result = "OnEnter ";
+	}
+	else if (operationType == EOperationType::ExitState_Steps)
+	{
+		result = "OnExit  ";
+	}
+	else if (operationType == EOperationType::Reset)
+	{
+		result = "OnCancel";
+	}
+
+	return result;
+}
+
 void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus status)
 {
 	check(OperationType == EOperationType::StepsCatcher);
@@ -49,11 +69,11 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 		{
 			if (status == EGFSStatus::Started)
 			{
-				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - BEG Step [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 2), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - BEG %s Step [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 2), *GetStepsPhaseString(step->ActiveOperationType), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 			}
 			else if (status == EGFSStatus::Finished || status == EGFSStatus::Cancelled)
 			{
-				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - END Step [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 2), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
+				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - END %s Step [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *LogGameFlowUtils::RepeatTab(LogGameFlowUtils::Depth + 2), *GetStepsPhaseString(step->ActiveOperationType), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 
 				StepIndices.Remove(stepIndex);
 
@@ -289,9 +309,11 @@ void UGameFlow::OnEnterState_Steps(const FOperationInfo& operationInfo)
 		{
 			if (stateObject->Steps[i])
 			{
+				stateObject->Steps[i]->StepsCatcherOperationId = stepsCatcherOperationId;
+				stateObject->Steps[i]->ActiveOperationType = EOperationType::EnterState_Steps;
+
 				stepsCatcherOperationInfo.ReportStepStatus(stateObject->Steps[i], EGFSStatus::Started);
 
-				stateObject->Steps[i]->StepsCatcherOperationId = stepsCatcherOperationId;
 				stateObject->Steps[i]->OnEnter();
 			}
 		}
@@ -536,9 +558,11 @@ void UGameFlow::OnExitState_Steps(const FOperationInfo& operationInfo)
 		{
 			if (stateObject->Steps[i])
 			{
+				stateObject->Steps[i]->StepsCatcherOperationId = stepsCatcherOperationId;
+				stateObject->Steps[i]->ActiveOperationType = EOperationType::ExitState_Steps;
+
 				stepsCatcherOperationInfo.ReportStepStatus(stateObject->Steps[i], EGFSStatus::Started);
 
-				stateObject->Steps[i]->StepsCatcherOperationId = stepsCatcherOperationId;
 				stateObject->Steps[i]->OnExit();
 			}
 		}
@@ -668,9 +692,11 @@ void UGameFlow::OnCancel_State_Steps(const FOperationInfo& operationInfo, const 
 	{
 		if (stateObject->Steps[i])
 		{
+			stateObject->Steps[i]->ActiveOperationType = EOperationType::Reset;
+
 			FOperationInfo& stepsCatcherOperationInfo = OperationContext[stateObject->Steps[i]->StepsCatcherOperationId];
 			stepsCatcherOperationInfo.NextOperationId = nextOperationId;
-			
+
 			stateObject->Steps[i]->OnCancel();
 		}
 	}

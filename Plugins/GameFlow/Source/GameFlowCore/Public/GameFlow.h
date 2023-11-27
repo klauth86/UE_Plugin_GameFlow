@@ -198,6 +198,7 @@ public:
 	void OnComplete(const EGFSStatus status) const;
 
 	OperationId StepsCatcherOperationId;
+	EOperationType ActiveOperationType;
 };
 
 //------------------------------------------------------
