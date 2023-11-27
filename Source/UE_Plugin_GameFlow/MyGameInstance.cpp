@@ -291,7 +291,7 @@ void UMyGameInstance::Shutdown()
 {
 	if (MainGameFlow)
 	{
-		MainGameFlow->ExitFlow(false, true);
+		MainGameFlow->ResetFlow(true);
 	}
 
 	Super::Shutdown();
