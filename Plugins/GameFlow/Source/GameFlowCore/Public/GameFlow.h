@@ -69,7 +69,8 @@ namespace EOperationType
 	const OperationId Cancel_Steps				= 1ull << 49;
 	const OperationId Cancel_SubFlow			= 1ull << 50;
 
-	const OperationId TransitionComplete		= 1ull << 51;
+	const OperationId TRANSACTION_BEGIN			= 1ull << 51;
+	const OperationId TRANSACTION_END			= 1ull << 52;
 }
 
 struct FOperationInfo
@@ -303,7 +304,7 @@ public:
 
 	static void CancelOperation(const OperationId operationId, const OperationId nextOperationId);
 
-	static void ExecuteOperation(const OperationId prevOperationId, const OperationId operationId);
+	static void ExecuteOperation(const OperationId prevOperationId, const OperationId nextOperationId);
 
 	static void OnEnterState(const OperationId operationId);
 
@@ -335,7 +336,9 @@ public:
 
 	static void OnResetSubFlows(const OperationId operationId);
 
-	static void OnTransitionComplete(const OperationId operationId);
+	static void OnTransactionBegin(const OperationId operationId);
+
+	static void OnTransactionEnd(const OperationId operationId);
 
 	static void OnCancel_State_Steps(const OperationId operationId, const OperationId nextOperationId);
 
@@ -435,7 +438,7 @@ protected:
 
 	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
 
-	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId nextOperationId, const bool executeSteps, const bool resetActiveSubFlow);
+	OperationId CreateTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId nextOperationId, const bool executeSteps, const bool resetActiveSubFlow);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
