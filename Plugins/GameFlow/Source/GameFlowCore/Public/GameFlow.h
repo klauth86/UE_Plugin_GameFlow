@@ -68,18 +68,27 @@ namespace EOperationType
 	const OperationId TRANSACTION_END			= 1ull << 56;
 }
 
+typedef uint8 OperationFlags;
+
+namespace EOperationFlags
+{
+	const OperationFlags None					= 0;
+	const OperationFlags ExecuteSteps			= 1 << 0;
+	const OperationFlags ResetActiveSubFlow		= 1 << 1;
+	const OperationFlags ResetAnySubFlows		= 1 << 2;
+}
+
 struct FOperationInfo
 {
-	FOperationInfo(FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId nextOperationId, const bool executeSteps, const bool resetSubFlow, UGameFlowTransitionKey* transitionKey)
-		: ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSubFlow(resetSubFlow), TransitionKey(transitionKey)
+	FOperationInfo(FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey)
+		: ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), OperationFlags(operationFlags), TransitionKey(transitionKey)
 	{}
 
 	FGuid& ActiveState;
 	TWeakObjectPtr<UGameFlow> Flow;
 	const FGuid State;
 	OperationId NextOperationId;
-	const uint8 ExecuteSteps : 1;
-	const uint8 ResetSubFlow : 1;
+	const OperationFlags OperationFlags;
 	TWeakObjectPtr<UGameFlowTransitionKey> TransitionKey;
 
 	TSet<int32> StepIndices;
@@ -415,7 +424,7 @@ public:
 	* @param resetSharedSubFlows	if true, this transition will reset Shared Flow if it is set up in active State
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void ExitFlow(const bool executeSteps, const bool resetSharedSubFlows);
+	void ExitFlow(const bool executeSteps, const bool resetActiveSubFlow);
 
 	/**
 	* Resets Flow
@@ -433,7 +442,7 @@ public:
 	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isEnqueued);
 
 	/**
 	* Sets World Context for Flow
@@ -448,17 +457,17 @@ public:
 
 protected:
 
-	OperationId EnterFlow_Internal(FGuid& activeState, const bool executeSteps, const OperationId nextOperationId);
+	OperationId EnterFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
 
-	OperationId ExitFlow_Internal(FGuid& activeState, const bool executeSteps, const bool resetActiveSubFlow, const OperationId nextOperationId);
+	OperationId ExitFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
 
-	OperationId ResetFlow_Internal(FGuid& activeState, const bool resetAnySubFlow, const OperationId nextOperationId);
+	OperationId ResetFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
 
-	OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const OperationId nextOperationId, const bool executeSteps, const bool resetActiveSubFlow);
+	OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const OperationFlags operationFlags, const OperationId nextOperationId);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
-	void AddEnqueuedOperation(const OperationId operationId) const;
+	void EnqueueOperation(const OperationId operationId) const;
 
 protected:
 	
