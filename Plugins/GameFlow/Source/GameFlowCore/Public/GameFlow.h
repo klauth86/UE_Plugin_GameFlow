@@ -80,10 +80,11 @@ namespace EOperationFlags
 
 struct FOperationInfo
 {
-	FOperationInfo(FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey)
-		: ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), OperationFlags(operationFlags), TransitionKey(transitionKey)
+	FOperationInfo(FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey, const uint32 additiveDepth)
+		: ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), OperationFlags(operationFlags), TransitionKey(transitionKey), AdditiveDepth(additiveDepth)
 	{}
 
+	////// Debug FString TypeString;
 	FGuid& ActiveState;
 	TWeakObjectPtr<UGameFlow> Flow;
 	const FGuid State;
@@ -93,6 +94,9 @@ struct FOperationInfo
 
 	TSet<int32> StepIndices;
 	uint32 ActiveIndex = 0;
+	uint32 AdditiveDepth = 0;
+
+	bool IsInternalTransaction;
 
 	void ReportStepStatus(const UGFS_Base* step, const EGFSStatus status);
 };
@@ -457,13 +461,15 @@ public:
 
 protected:
 
-	OperationId EnterFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
+	OperationId EnterFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
 
-	OperationId ExitFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
+	OperationId ExitFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
 
-	OperationId ResetFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId);
+	void ResetFlow_Params(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
 
-	OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const OperationFlags operationFlags, const OperationId nextOperationId);
+	OperationId ResetFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
+
+	OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
 
