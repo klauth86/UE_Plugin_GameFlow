@@ -32,40 +32,38 @@ enum class EGFSStatus : uint8
 
 typedef uint64 OperationId;
 
-const OperationId OPERATION_ID_MAX = 1ull << 33;
-
-const OperationId OPERATION_TYPE_MASK = 0xFFFFFFFF00000000;
+const OperationId OPERATION_TYPE_MASK = 10000000000000000ull;
 
 namespace EOperationType
 {
-	const OperationId EnterState				= 1ull << 34;
-	const OperationId EnterState_Set			= 1ull << 35;
-	const OperationId EnterState_Set_Log		= 1ull << 36;
-	const OperationId EnterState_Steps			= 1ull << 37;
-	const OperationId EnterState_SubFlow_Set	= 1ull << 38;
-	const OperationId EnterState_SubFlow_Set_Log= 1ull << 39;
-	const OperationId EnterState_SubFlow		= 1ull << 40;
+	const OperationId EnterState =					1001;
+	const OperationId EnterState_Set =				1002;
+	const OperationId EnterState_Set_Log =			1003;
+	const OperationId EnterState_Steps =			1004;
+	const OperationId EnterState_SubFlow_Set =		1005;
+	const OperationId EnterState_SubFlow_Set_Log =	1006;
+	const OperationId EnterState_SubFlow =			1007;
 
-	const OperationId AutoTransition			= 1ull << 41;
+	const OperationId AutoTransition =				1010;
 
-	const OperationId ExitState					= 1ull << 42;
-	const OperationId ExitState_SubFlow			= 1ull << 43;
-	const OperationId ExitState_SubFlow_Set_Log	= 1ull << 44;
-	const OperationId ExitState_SubFlow_Set		= 1ull << 45;
-	const OperationId ExitState_Steps			= 1ull << 46;
-	const OperationId ExitState_Set_Log			= 1ull << 47;
-	const OperationId ExitState_Set				= 1ull << 48;
+	const OperationId ExitState =					1021;
+	const OperationId ExitState_SubFlow =			1022;
+	const OperationId ExitState_SubFlow_Set_Log =	1023;
+	const OperationId ExitState_SubFlow_Set =		1024;
+	const OperationId ExitState_Steps =				1025;
+	const OperationId ExitState_Set_Log =			1026;
+	const OperationId ExitState_Set =				1027;
 
-	const OperationId CatchingOperation			= 1ull << 49;
+	const OperationId CatchingOperation =			1031;
 
-	const OperationId Reset						= 1ull << 51;
-	const OperationId ResetSubFlows				= 1ull << 52;
+	const OperationId Reset =						1091;
+	const OperationId ResetSubFlows =				1092;
 
-	const OperationId Cancel_Steps				= 1ull << 53;
-	const OperationId Cancel_SubFlow			= 1ull << 54;
+	const OperationId Cancel_Steps =				1093;
+	const OperationId Cancel_SubFlow =				1094;
 
-	const OperationId TRANSACTION_BEGIN			= 1ull << 55;
-	const OperationId TRANSACTION_END			= 1ull << 56;
+	const OperationId TRANSACTION_BEGIN =			1000;
+	const OperationId TRANSACTION_END =				1099;
 }
 
 typedef uint8 OperationFlags;

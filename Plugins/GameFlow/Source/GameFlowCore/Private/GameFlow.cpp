@@ -57,11 +57,11 @@ OperationId GetOperationId()
 {
 	static OperationId counter = 0;
 	
-	counter = (counter + 1) % OPERATION_ID_MAX;
+	counter = (counter + 1) % OPERATION_TYPE_MASK;
 
 	if (counter == 0)
 	{
-		counter = (counter + 1) % OPERATION_ID_MAX;
+		counter = (counter + 1) % OPERATION_TYPE_MASK;
 	}
 
 	return counter;
@@ -177,181 +177,181 @@ namespace OperationFactory
 {
 	OperationId EnterState(FGuid& activeState, UGameFlow* flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, state, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_Set(FGuid& activeState, UGameFlow* flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_Set;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_Set;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, state, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_Set_Log(FGuid& activeState, UGameFlow* flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_Set_Log;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_Set_Log;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, state, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_Steps(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_Steps;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_Steps;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_SubFlow_Set(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_SubFlow_Set;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_SubFlow_Set;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_SubFlow_Set_Log(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_SubFlow_Set_Log;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_SubFlow_Set_Log;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId EnterState_SubFlow(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::EnterState_SubFlow;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnterState_SubFlow;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId AutoTransition(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::AutoTransition;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::AutoTransition;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_SubFlow(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_SubFlow;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_SubFlow;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_SubFlow_Set_Log(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_SubFlow_Set_Log;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_SubFlow_Set_Log;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_SubFlow_Set(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_SubFlow_Set;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_SubFlow_Set;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_Steps(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_Steps;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_Steps;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_Set_Log(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_Set_Log;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_Set_Log;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId ExitState_Set(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ExitState_Set;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ExitState_Set;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId CatchingOperation(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::CatchingOperation;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::CatchingOperation;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId Reset(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::Reset;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::Reset;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId Reset_SubFlows(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::ResetSubFlows;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::ResetSubFlows;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId TransactionBegin(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const uint32 additiveDepth, const bool IsInternalTransaction)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::TRANSACTION_BEGIN;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::TRANSACTION_BEGIN;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, OperationFlags(), nullptr, additiveDepth);
 		operationInfo.IsInternalTransaction = IsInternalTransaction;
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
 
 	OperationId TransactionEnd(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() | EOperationType::TRANSACTION_END;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::TRANSACTION_END;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, OperationFlags(), nullptr, additiveDepth);
-		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId & OPERATION_TYPE_MASK);
+		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
 		return operationId;
 	}
@@ -387,7 +387,7 @@ void UGameFlow::CancelOperation(const OperationId operationId, const OperationId
 {
 	const OperationId activeOperationId = GetActiveOperation(operationId);
 
-	const OperationId operationType = activeOperationId & OPERATION_TYPE_MASK;
+	const OperationId operationType = activeOperationId / OPERATION_TYPE_MASK;
 
 	if (operationType == EOperationType::EnterState_Steps) return OnCancel_State_Steps(activeOperationId, nextOperationId);
 	if (operationType == EOperationType::ExitState_Steps) return OnCancel_State_Steps(activeOperationId, nextOperationId);
@@ -412,7 +412,7 @@ void UGameFlow::ExecuteOperation(const OperationId operationId)
 					OperationContext[flow->ActiveTransactionId].ActiveIndex++;
 				}
 
-				const OperationId operationType = operationId & OPERATION_TYPE_MASK;
+				const OperationId operationType = operationId / OPERATION_TYPE_MASK;
 
 				if (operationType == EOperationType::EnterState) return OnEnterState(operationId);
 				if (operationType == EOperationType::EnterState_Set) return OnEnterState_Set(operationId);
@@ -456,7 +456,7 @@ void UGameFlow::LogOperation(const OperationId operationId, const FOperationInfo
 {
 	if (UGameFlow* flow = operationInfo.Flow.Get())
 	{
-		const OperationId operationType = operationId & OPERATION_TYPE_MASK;
+		const OperationId operationType = operationId / OPERATION_TYPE_MASK;
 
 		if (operationType == EOperationType::EnterState_Set_Log)
 		{
