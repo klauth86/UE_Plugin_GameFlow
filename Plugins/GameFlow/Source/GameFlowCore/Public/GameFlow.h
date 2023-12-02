@@ -10,13 +10,6 @@ class UEdGraph;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGameFlow, Log, All);
 
-namespace LogGameFlowUtils
-{
-	extern int32 Depth;
-
-	extern FString RepeatTab(int32 num);
-}
-
 //------------------------------------------------------
 // EGFSStatus
 //------------------------------------------------------
@@ -39,51 +32,69 @@ enum class EGFSStatus : uint8
 
 typedef uint64 OperationId;
 
-UENUM()
-enum class EOperationType : uint8
+const OperationId OPERATION_TYPE_MASK = 10000000000000000ull;
+
+namespace EOperationType
 {
-	Unset,
+	const OperationId EnterState =					1001;
+	const OperationId EnterState_Set =				1002;
+	const OperationId EnterState_Set_Log =			1003;
+	const OperationId EnterState_Steps =			1004;
+	const OperationId EnterState_SubFlow_Set =		1005;
+	const OperationId EnterState_SubFlow_Set_Log =	1006;
+	const OperationId EnterState_SubFlow =			1007;
 
-	EnterState,
-	EnterState_Set,
-	EnterState_Steps,
-	EnterState_SubFlow_Set,
-	EnterState_SubFlow,
+	const OperationId AutoTransition =				1010;
 
-	AutoTransition,
+	const OperationId ExitState =					1021;
+	const OperationId ExitState_SubFlow =			1022;
+	const OperationId ExitState_SubFlow_Set_Log =	1023;
+	const OperationId ExitState_SubFlow_Set =		1024;
+	const OperationId ExitState_Steps =				1025;
+	const OperationId ExitState_Set_Log =			1026;
+	const OperationId ExitState_Set =				1027;
 
-	ExitState,
-	ExitState_SubFlow,
-	ExitState_SubFlow_Set,
-	ExitState_Steps,
-	ExitState_Set,
+	const OperationId CatchingOperation =			1031;
 
-	StepsCatcher,
+	const OperationId Reset =						1091;
+	const OperationId ResetSubFlows =				1092;
 
-	MakeTransition_Enqueued,
+	const OperationId Cancel_Steps =				1093;
+	const OperationId Cancel_SubFlow =				1094;
 
-	Reset,
-	ResetSubFlows,
+	const OperationId TRANSACTION_BEGIN =			1000;
+	const OperationId TRANSACTION_END =				1099;
+}
 
-	TransitionComplete,
-};
+typedef uint8 OperationFlags;
+
+namespace EOperationFlags
+{
+	const OperationFlags None					= 0;
+	const OperationFlags ExecuteSteps			= 1 << 0;
+	const OperationFlags ResetActiveSubFlow		= 1 << 1;
+	const OperationFlags ResetAnySubFlows		= 1 << 2;
+}
 
 struct FOperationInfo
 {
-	FOperationInfo(const EOperationType operationType, FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId& nextOperationId, const bool executeSteps, const bool resetSubFlow, UGameFlowTransitionKey* transitionKey)
-		: OperationType(operationType), ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), ExecuteSteps(executeSteps), ResetSubFlow(resetSubFlow), TransitionKey(transitionKey)
+	FOperationInfo(FGuid& activeState, TWeakObjectPtr<UGameFlow> flow, const FGuid state, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey, const uint32 additiveDepth)
+		: ActiveState(activeState), Flow(flow), State(state), NextOperationId(nextOperationId), OperationFlags(operationFlags), TransitionKey(transitionKey), AdditiveDepth(additiveDepth)
 	{}
 
-	const EOperationType OperationType;
+	////// Debug FString TypeString;
 	FGuid& ActiveState;
 	TWeakObjectPtr<UGameFlow> Flow;
 	const FGuid State;
 	OperationId NextOperationId;
-	const uint8 ExecuteSteps : 1;
-	const uint8 ResetSubFlow : 1;
+	const OperationFlags OperationFlags;
 	TWeakObjectPtr<UGameFlowTransitionKey> TransitionKey;
 
 	TSet<int32> StepIndices;
+	uint32 ActiveIndex = 0;
+	uint32 AdditiveDepth = 0;
+
+	bool IsInternalTransaction;
 
 	void ReportStepStatus(const UGFS_Base* step, const EGFSStatus status);
 };
@@ -196,9 +207,10 @@ public:
 	/* Notifies owning State when Step enter/exit execution is complete */
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
 	void OnComplete(const EGFSStatus status) const;
+	
+	OperationId ActiveOperationType;
 
-	OperationId StepsCatcherOperationId;
-	EOperationType ActiveOperationType;
+	OperationId CatchingOperationId;
 };
 
 //------------------------------------------------------
@@ -295,45 +307,55 @@ class GAMEFLOWCORE_API UGameFlow : public UObject
 
 public:
 
-	static void CancelOperation(const OperationId& operationId, const OperationId& nextOperationId);
+	static void CancelOperation(const OperationId operationId, const OperationId nextOperationId);
 
-	static void ExecuteOperation(const OperationId& operationId);
+	static void ExecuteOperation(const OperationId operationId);
 
-	static void OnEnterState(const FOperationInfo& operationInfo);
+	static void LogOperation(const OperationId operationId, const FOperationInfo& operationInfo);
 
-	static void OnEnterState_Set(const FOperationInfo& operationInfo);
+	static void OnEnterState(const OperationId operationId);
 
-	static void OnEnterState_Steps(const FOperationInfo& operationInfo);
+	static void OnEnterState_Set(const OperationId operationId);
 
-	static void OnEnterState_SubFlow_Set(const FOperationInfo& operationInfo);
+	static void OnEnterState_Set_Log(const OperationId operationId);
 
-	static void OnEnterState_SubFlow(const FOperationInfo& operationInfo);
+	static void OnEnterState_Steps(const OperationId operationId);
 
-	static void OnExitState(const FOperationInfo& operationInfo);
+	static void OnEnterState_SubFlow_Set(const OperationId operationId);
 
-	static void OnExitState_SubFlow(const FOperationInfo& operationInfo);
+	static void OnEnterState_SubFlow_Set_Log(const OperationId operationId);
 
-	static void OnExitState_SubFlow_Set(const FOperationInfo& operationInfo);
+	static void OnEnterState_SubFlow(const OperationId operationId);
 
-	static void OnExitState_Steps(const FOperationInfo& operationInfo);
+	static void OnExitState(const OperationId operationId);
 
-	static void OnExitState_Set(const FOperationInfo& operationInfo);
+	static void OnExitState_SubFlow(const OperationId operationId);
 
-	static void OnStepsCatcher(const FOperationInfo& operationInfo) { ExecuteOperation(operationInfo.NextOperationId); }
+	static void OnExitState_SubFlow_Set_Log(const OperationId operationId);
 
-	static void OnAutoTransition(const FOperationInfo& operationInfo);
+	static void OnExitState_SubFlow_Set(const OperationId operationId);
 
-	static void OnMakeTransitionEnqueued(const FOperationInfo& operationInfo);
+	static void OnExitState_Steps(const OperationId operationId);
 
-	static void OnReset(const FOperationInfo& operationInfo);
+	static void OnExitState_Set_Log(const OperationId operationId);
 
-	static void OnResetSubFlows(const FOperationInfo& operationInfo);
+	static void OnExitState_Set(const OperationId operationId);
 
-	static void OnTransitionComplete(const FOperationInfo& operationInfo);
+	static void OnCatchingOperation(const OperationId operationId);
 
-	static void OnCancel_State_Steps(const FOperationInfo& operationInfo, const OperationId& operationId);
+	static void OnAutoTransition(const OperationId operationId);
 
-	static void OnCancel_State_SubFlow(const FOperationInfo& operationInfo, const OperationId& operationId);
+	static void OnReset(const OperationId operationId);
+
+	static void OnResetSubFlows(const OperationId operationId);
+
+	static void OnTransactionBegin(const OperationId operationId);
+
+	static void OnTransactionEnd(const OperationId operationId);
+
+	static void OnCancel_State_Steps(const OperationId operationId, const OperationId nextOperationId);
+
+	static void OnCancel_State_SubFlow(const OperationId operationId, const OperationId nextOperationId);
 
 #if WITH_EDITORONLY_DATA
 
@@ -378,6 +400,12 @@ public:
 	bool IsTransitioning() const;
 
 	/**
+	* Returns true if Flow can be entered
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	bool CanEnterFlow() const;
+
+	/**
 	* Enters Flow
 	*
 	* @param executeSteps			If true, this transition will execute steps
@@ -386,13 +414,19 @@ public:
 	void EnterFlow(const bool executeSteps);
 
 	/**
+	* Returns true if Flow can be exited
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	bool CanExitFlow() const;
+
+	/**
 	* Exits Flow
 	*
 	* @param executeSteps			If true, this transition will execute steps
 	* @param resetSharedSubFlows	if true, this transition will reset Shared Flow if it is set up in active State
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void ExitFlow(const bool executeSteps, const bool resetSharedSubFlows);
+	void ExitFlow(const bool executeSteps, const bool resetActiveSubFlow);
 
 	/**
 	* Resets Flow
@@ -400,7 +434,7 @@ public:
 	* @param resetAnySubFlow		If true, all Sub Flows that are set up on any State of this Flow will also be reset
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void ResetFlow(const bool resetAnySubFlow) { ResetFlow(ActiveState, resetAnySubFlow, OperationId()); }
+	void ResetFlow(const bool resetAnySubFlow);
 
 	/**
 	* Makes transition by Transition Key
@@ -410,7 +444,7 @@ public:
 	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isEnqueued);
 
 	/**
 	* Sets World Context for Flow
@@ -425,13 +459,19 @@ public:
 
 protected:
 
-	void ResetFlow(FGuid& activeState, const bool resetAnySubFlow, const OperationId& nextOperationId);
+	OperationId EnterFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
 
-	const OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool isEnqueued);
+	OperationId ExitFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
 
-	OperationId CreateMakeTransitionOperation(UGameFlowTransitionKey* transitionKey, const OperationId& nextOperationId, const bool executeSteps, const bool resetActiveSubFlow);
+	void ResetFlow_Params(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
+
+	OperationId ResetFlow_Internal(FGuid& activeState, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth, const bool isInternalTransaction);
+
+	OperationId MakeTransition_Internal(UGameFlowTransitionKey* transitionKey, const OperationFlags operationFlags, const OperationId nextOperationId, const uint32 additiveDepth);
 
 	void SetWorldPtr(FGuid& activeState, UWorld* world, const bool force);
+
+	void EnqueueOperation(const OperationId operationId) const;
 
 protected:
 	
@@ -447,5 +487,6 @@ protected:
 	FGuid EntryState;
 
 	FGuid ActiveState;
-	OperationId ActiveOperationId;
+
+	OperationId ActiveTransactionId;
 };
