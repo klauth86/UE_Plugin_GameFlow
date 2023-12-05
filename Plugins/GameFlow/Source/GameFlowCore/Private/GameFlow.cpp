@@ -1155,7 +1155,7 @@ void UGameFlow::EnterFlow(const bool executeSteps)
 {
 	if (CanEnterFlow())
 	{
-		OperationFlags operationFlags;
+		OperationFlags operationFlags = EOperationFlags::None;
 		if (executeSteps) operationFlags |= EOperationFlags::ExecuteSteps;
 
 		ExecuteOperation(EnterFlow_Internal(ActiveState, operationFlags, OperationId(), 0, false));
@@ -1189,7 +1189,7 @@ void UGameFlow::ExitFlow(const bool executeSteps, const bool resetActiveSubFlow)
 {
 	if (CanExitFlow())
 	{
-		OperationFlags operationFlags;
+		OperationFlags operationFlags = EOperationFlags::None;
 		if (executeSteps) operationFlags |= EOperationFlags::ExecuteSteps;
 		if (resetActiveSubFlow) operationFlags |= EOperationFlags::ResetActiveSubFlow;
 
@@ -1199,7 +1199,7 @@ void UGameFlow::ExitFlow(const bool executeSteps, const bool resetActiveSubFlow)
 
 void UGameFlow::ResetFlow(const bool resetAnySubFlow)
 {
-	OperationFlags operationFlags;
+	OperationFlags operationFlags = EOperationFlags::None;
 	if (resetAnySubFlow) operationFlags |= EOperationFlags::ResetAnySubFlows;
 
 	ResetFlow_Params(ActiveState, operationFlags, OperationId(), 0, false);
@@ -1211,7 +1211,7 @@ void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool
 	{
 		if (ActiveState.IsValid())
 		{
-			OperationFlags operationFlags;
+			OperationFlags operationFlags = EOperationFlags::None;
 			if (executeSteps) operationFlags |= EOperationFlags::ExecuteSteps;
 			if (resetActiveSubFlow) operationFlags |= EOperationFlags::ResetActiveSubFlow;
 
