@@ -56,6 +56,8 @@ namespace EOperationType
 
 	const OperationId CatchingOperation =			1031;
 
+	const OperationId EnqueuedTransition =			1051;
+
 	const OperationId Reset =						1091;
 	const OperationId ResetSubFlows =				1092;
 
@@ -91,7 +93,7 @@ struct FOperationInfo
 	TWeakObjectPtr<UGameFlowTransitionKey> TransitionKey;
 
 	TSet<int32> StepIndices;
-	uint32 ActiveIndex = 0;
+	OperationId ActiveOperationId = OperationId();
 	uint32 AdditiveDepth = 0;
 
 	bool IsInternalTransaction;
@@ -327,6 +329,8 @@ public:
 
 	static void OnEnterState_SubFlow(const OperationId operationId);
 
+	static void OnAutoTransition(const OperationId operationId);
+
 	static void OnExitState(const OperationId operationId);
 
 	static void OnExitState_SubFlow(const OperationId operationId);
@@ -343,7 +347,7 @@ public:
 
 	static void OnCatchingOperation(const OperationId operationId);
 
-	static void OnAutoTransition(const OperationId operationId);
+	static void OnEnqueuedTransition(const OperationId operationId);
 
 	static void OnReset(const OperationId operationId);
 
