@@ -8,12 +8,8 @@
 #include "UObject/ObjectSaveContext.h"
 #include "EdGraphNode_Comment.h"
 
-#include "Factory_GameFlowTransitionKey.h"
-#include "AssetTypeActions_GameFlowTransitionKey.h"
-#include "Factory_GameFlowContext.h"
-#include "AssetTypeActions_GameFlowContext.h"
-#include "Factory_GameFlow.h"
-#include "AssetTypeActions_GameFlow.h"
+#include "AssetTypeActions.h"
+#include "Factories.h"
 #include "AssetTypeCategories.h"
 #include "GameFlow.h"
 
