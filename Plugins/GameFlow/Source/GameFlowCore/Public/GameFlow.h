@@ -11,11 +11,11 @@ class UEdGraph;
 DECLARE_LOG_CATEGORY_EXTERN(LogGameFlow, Log, All);
 
 //------------------------------------------------------
-// EGFSStatus
+// EGameFlowStepStatus
 //------------------------------------------------------
 
 UENUM(BlueprintType)
-enum class EGFSStatus : uint8
+enum class EGameFlowStepStatus : uint8
 {
 	Unset = 0,
 	Started,
@@ -98,7 +98,7 @@ struct FOperationInfo
 
 	bool IsInternalTransaction;
 
-	void ReportStepStatus(const UGFS_Base* step, const EGFSStatus status);
+	void ReportStepStatus(const UGameFlowStep* step, const EGameFlowStepStatus status);
 };
 
 //------------------------------------------------------
@@ -131,11 +131,11 @@ public:
 };
 
 //------------------------------------------------------
-// UGFC_MapBased
+// UGameFlowContext_MapBased
 //------------------------------------------------------
 
 UCLASS(BlueprintType)
-class GAMEFLOWCORE_API UGFC_MapBased : public UObject, public IGameFlowContext
+class GAMEFLOWCORE_API UGameFlowContext_MapBased : public UObject, public IGameFlowContext
 {
 	GENERATED_BODY()
 
@@ -162,11 +162,11 @@ class GAMEFLOWCORE_API UGameFlowTransitionKey : public UObject
 };
 
 //------------------------------------------------------
-// UGFS_Base
+// UGameFlowStep
 //------------------------------------------------------
 
 UCLASS(Abstract, Blueprintable, EditInlineNew)
-class GAMEFLOWCORE_API UGFS_Base : public UObject
+class GAMEFLOWCORE_API UGameFlowStep : public UObject
 {
 	GENERATED_BODY()
 
@@ -176,19 +176,19 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnEnter();
 
-	virtual void OnEnter_Implementation() { OnComplete(EGFSStatus::Finished); }
+	virtual void OnEnter_Implementation() { OnComplete(EGameFlowStepStatus::Finished); }
 
 	/* Executed when owning State is exited */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnExit();
 
-	virtual void OnExit_Implementation() { OnComplete(EGFSStatus::Finished); }
+	virtual void OnExit_Implementation() { OnComplete(EGameFlowStepStatus::Finished); }
 
 	/* Executed when owning/parent Flow is reset */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
 	void OnCancel();
 
-	virtual void OnCancel_Implementation() { OnComplete(EGFSStatus::Cancelled); }
+	virtual void OnCancel_Implementation() { OnComplete(EGameFlowStepStatus::Cancelled); }
 
 	/* Executed when owning Flow World Context is changed */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCosmetic, Category = "Step Base")
@@ -208,7 +208,7 @@ public:
 
 	/* Notifies owning State when Step enter/exit execution is complete */
 	UFUNCTION(BlueprintCallable, Category = "Step Base")
-	void OnComplete(const EGFSStatus status) const;
+	void OnComplete(const EGameFlowStepStatus status) const;
 	
 	OperationId ActiveOperationType;
 
@@ -291,7 +291,7 @@ public:
 
 	/* Steps to execute when State is entered/exited, going from first to last when entering and vice versa when exiting */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditInline))
-	TArray<TObjectPtr<UGFS_Base>> Steps;
+	TArray<TObjectPtr<UGameFlowStep>> Steps;
 
 	/* Transition Key to apply when all Steps of this State will finish Enter execution */
 	UPROPERTY(EditAnywhere, Category = "State", meta = (EditCondition = "SubFlow == nullptr", EditConditionHides))

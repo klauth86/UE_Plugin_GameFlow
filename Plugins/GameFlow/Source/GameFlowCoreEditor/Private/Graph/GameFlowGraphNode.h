@@ -8,7 +8,7 @@
 #include "GameFlowGraphNode.generated.h"
 
 class UGameFlow;
-class UGFS_Base;
+class UGameFlowStep;
 
 //------------------------------------------------------
 // UGameFlowGraphNode_Start
@@ -165,7 +165,7 @@ protected:
 
 	virtual FText GetPreviewCornerText() const;
 
-	FText GetStepDescription(const TObjectPtr<UGFS_Base>& step) const;
+	FText GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const;
 	FMargin StepsPadding() const;
 	EVisibility StepsVisibility() const;
 

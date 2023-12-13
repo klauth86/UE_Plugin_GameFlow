@@ -115,7 +115,7 @@ FString GetOperationTypeString(const OperationId operationType)
 // FOperationInfo
 //------------------------------------------------------
 
-void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus status)
+void FOperationInfo::ReportStepStatus(const UGameFlowStep* step, const EGameFlowStepStatus status)
 {
 	UGameFlow* flow = Flow.Get();
 	const UGameFlowState* stateObject = flow->GetStateObject(State);
@@ -126,11 +126,11 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 	{
 		if (StepIndices.Contains(stepIndex))
 		{
-			if (status == EGFSStatus::Started)
+			if (status == EGameFlowStepStatus::Started)
 			{
 				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - %s [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *RepeatTab(AdditiveDepth + 1), *GetStepPhaseString(step->ActiveOperationType), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 			}
-			else if (status == EGFSStatus::Finished || status == EGFSStatus::Cancelled)
+			else if (status == EGameFlowStepStatus::Finished || status == EGameFlowStepStatus::Cancelled)
 			{
 				UE_LOG(LogGameFlow, Log, TEXT("[%s][FLOW]%s - %s [%s] in state [%s] in flow {%s}"), *FDateTime::Now().ToString(), *RepeatTab(AdditiveDepth + 1), *GetStepPhaseString(step->ActiveOperationType), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 
@@ -141,7 +141,7 @@ void FOperationInfo::ReportStepStatus(const UGFS_Base* step, const EGFSStatus st
 					UGameFlow::ExecuteOperation(step->CatchingOperationId);
 				}
 			}
-			else if (status == EGFSStatus::Failed)
+			else if (status == EGameFlowStepStatus::Failed)
 			{
 				UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%s - FAILED [%s] in state [%s] in flow {%s}!"), *FDateTime::Now().ToString(), *RepeatTab(AdditiveDepth + 1), *step->GenerateDescription().ToString(), *stateObject->StateTitle.ToString(), *flow->GetName());
 			}
@@ -359,10 +359,10 @@ namespace OperationFactory
 }
 
 //------------------------------------------------------
-// UGFS_Base
+// UGameFlowStep
 //------------------------------------------------------
 
-void UGFS_Base::OnComplete(const EGFSStatus status) const { OperationContext[CatchingOperationId].ReportStepStatus(this, status); }
+void UGameFlowStep::OnComplete(const EGameFlowStepStatus status) const { OperationContext[CatchingOperationId].ReportStepStatus(this, status); }
 
 //------------------------------------------------------
 // UGameFlowState
@@ -512,7 +512,7 @@ void UGameFlow::OnEnterState(const OperationId operationId)
 		nextOperationId = OperationFactory::EnterState_SubFlow_Set(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 	}
 
-	if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGFS_Base>& step) { return step; }))
+	if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGameFlowStep>& step) { return step; }))
 	{
 		nextOperationId = OperationFactory::EnterState_Steps(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 	}
@@ -577,7 +577,7 @@ void UGameFlow::OnEnterState_Steps(const OperationId operationId)
 			stateObject->Steps[i]->ActiveOperationType = EOperationType::EnterState_Steps;
 			stateObject->Steps[i]->CatchingOperationId = catchingOperationId;
 
-			catchingOperationInfo.ReportStepStatus(stateObject->Steps[i], EGFSStatus::Started);
+			catchingOperationInfo.ReportStepStatus(stateObject->Steps[i], EGameFlowStepStatus::Started);
 
 			stateObject->Steps[i]->OnEnter();
 		}
@@ -719,7 +719,7 @@ void UGameFlow::OnExitState(const OperationId operationId)
 	nextOperationId = OperationFactory::ExitState_Set(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);	
 	nextOperationId = OperationFactory::ExitState_Set_Log(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 
-	if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGFS_Base>& step) { return step; }))
+	if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGameFlowStep>& step) { return step; }))
 	{
 		nextOperationId = OperationFactory::ExitState_Steps(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 	}
@@ -843,7 +843,7 @@ void UGameFlow::OnExitState_Steps(const OperationId operationId)
 			stateObject->Steps[i]->ActiveOperationType = EOperationType::ExitState_Steps;
 			stateObject->Steps[i]->CatchingOperationId = catchingOperationId;
 
-			catchingOperationInfo.ReportStepStatus(stateObject->Steps[i], EGFSStatus::Started);
+			catchingOperationInfo.ReportStepStatus(stateObject->Steps[i], EGameFlowStepStatus::Started);
 
 			stateObject->Steps[i]->OnExit();
 		}
@@ -911,7 +911,7 @@ void UGameFlow::OnReset(const OperationId operationId)
 		nextOperationId = OperationFactory::ExitState_Set(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 		nextOperationId = OperationFactory::ExitState_Set_Log(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 
-		if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGFS_Base>& step) { return step; }))
+		if (operationInfo.OperationFlags & EOperationFlags::ExecuteSteps && stateObject->Steps.FindByPredicate([](const TObjectPtr<UGameFlowStep>& step) { return step; }))
 		{
 			nextOperationId = OperationFactory::ExitState_Steps(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 		}
@@ -1356,7 +1356,7 @@ void UGameFlow::SetWorldPtr(FGuid& activeState, UWorld* world, const bool force)
 
 		if (activeState.IsValid())
 		{
-			for (const TObjectPtr<UGFS_Base>& step : States[activeState]->Steps)
+			for (const TObjectPtr<UGameFlowStep>& step : States[activeState]->Steps)
 			{
 				if (step)
 				{
