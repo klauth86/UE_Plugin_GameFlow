@@ -8,12 +8,8 @@
 #include "UObject/ObjectSaveContext.h"
 #include "EdGraphNode_Comment.h"
 
-#include "Factory_GameFlowTransitionKey.h"
-#include "AssetTypeActions_GameFlowTransitionKey.h"
-#include "Factory_GameFlowContext.h"
-#include "AssetTypeActions_GameFlowContext.h"
-#include "Factory_GameFlow.h"
-#include "AssetTypeActions_GameFlow.h"
+#include "AssetTypeActions.h"
+#include "Factories.h"
 #include "AssetTypeCategories.h"
 #include "GameFlow.h"
 
@@ -615,7 +611,7 @@ FText SGameFlowGraphNode_State::GetPreviewCornerText() const
 	return FText::Format(LOCTEXT("SGameFlowGraphNode_State_PreviewCornerText", "{0} State"), BaseNode->GetNodeTitle(ENodeTitleType::EditableTitle));
 }
 
-FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGFS_Base>& step) const
+FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const
 {
 	return step ? step->GenerateDescription() : LOCTEXT("SGameFlowGraphNode_State_StepDescription_Default", "None");
 }
@@ -637,7 +633,7 @@ EVisibility SGameFlowGraphNode_State::StepsVisibility() const
 		
 		if (states.Contains(GraphNode->NodeGuid))
 		{
-			for (const TObjectPtr<UGFS_Base>& step : states[GraphNode->NodeGuid]->Steps)
+			for (const TObjectPtr<UGameFlowStep>& step : states[GraphNode->NodeGuid]->Steps)
 			{
 				StepsVerticalBoxPtr->AddSlot().AutoHeight()[SNew(STextBlock).Text(GetStepDescription(step)).TextStyle(FAppStyle::Get(), "SmallText")];
 				num++;
@@ -1522,12 +1518,12 @@ uint32 UFactory_GameFlow::GetMenuCategories() const { return EAssetTypeCategorie
 UFactory_GameFlowContext::UFactory_GameFlowContext(const FObjectInitializer& ObjectInitializer) :Super(ObjectInitializer)
 {
 	bCreateNew = true;
-	SupportedClass = UGFC_MapBased::StaticClass();
+	SupportedClass = UGameFlowContext_MapBased::StaticClass();
 }
 
 UObject* UFactory_GameFlowContext::FactoryCreateNew(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn, FName CallingContext)
 {
-	return NewObject<UGFC_MapBased>(InParent, InClass, InName, Flags);
+	return NewObject<UGameFlowContext_MapBased>(InParent, InClass, InName, Flags);
 }
 
 FText UFactory_GameFlowContext::GetDisplayName() const { return LOCTEXT("UFactory_GameFlowContext_DisplayName", "Game Flow Context (Map based)"); }
@@ -2171,7 +2167,7 @@ void FGameFlowEditor::PasteNodes()
 				state->bResetSubFlowOnEnterState = stateRemappingEntry.Value->bResetSubFlowOnEnterState;
 				state->bResetSubFlowOnExitState = stateRemappingEntry.Value->bResetSubFlowOnExitState;
 
-				for (const TObjectPtr<UGFS_Base>& step : stateRemappingEntry.Value->Steps)
+				for (const TObjectPtr<UGameFlowStep>& step : stateRemappingEntry.Value->Steps)
 				{
 					state->Steps.Add(DuplicateObject(step, state));
 				}
@@ -2317,7 +2313,7 @@ uint32 FAssetTypeActions_GameFlow::GetCategories() { return EAssetTypeCategories
 
 FText FAssetTypeActions_GameFlowContext::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlowContext_Name", "Game Flow Context (Map based)"); }
 
-UClass* FAssetTypeActions_GameFlowContext::GetSupportedClass() const { return UGFC_MapBased::StaticClass(); }
+UClass* FAssetTypeActions_GameFlowContext::GetSupportedClass() const { return UGameFlowContext_MapBased::StaticClass(); }
 
 uint32 FAssetTypeActions_GameFlowContext::GetCategories() { return EAssetTypeCategories::Gameplay; }
 
