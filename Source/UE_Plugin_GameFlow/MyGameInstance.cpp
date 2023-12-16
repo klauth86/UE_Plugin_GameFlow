@@ -64,7 +64,7 @@ void UGFS_ShowWidget::OnEnter_Implementation()
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute Show Widget step when calling Game Flow has no World (%s)"), *flow->GetName());
 	}
 
-	OnComplete(EGFSStatus::Finished);
+	OnComplete(EGameFlowStepStatus::Finished);
 }
 
 void UGFS_ShowWidget::OnExit_Implementation()
@@ -101,7 +101,7 @@ void UGFS_ShowWidget::OnExit_Implementation()
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute Show Widget step when calling Game Flow has no World (%s)"), *flow->GetName());
 	}
 
-	OnComplete(EGFSStatus::Finished);
+	OnComplete(EGameFlowStepStatus::Finished);
 }
 
 FText UGFS_ShowWidget::GenerateDescription_Implementation() const
@@ -146,7 +146,7 @@ void UGFS_SaveGame_Load::OnEnter_Implementation()
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute SaveGame Load step when it has unset SaveGameClass and there is no existing Slot named %s (%s)"), *SlotName, *flow->GetName());
 	}
 
-	OnComplete(EGFSStatus::Finished);
+	OnComplete(EGameFlowStepStatus::Finished);
 }
 
 FText UGFS_SaveGame_Load::GenerateDescription_Implementation() const
@@ -187,7 +187,7 @@ void UGFS_Level_Load::OnWorldContextChanged_Implementation(const bool force)
 
 	if (world && !MapToLoad.IsNull() && world->RemovePIEPrefix(world->GetPathName()) == MapToLoad.GetAssetPathString())
 	{
-		OnComplete(EGFSStatus::Finished);
+		OnComplete(EGameFlowStepStatus::Finished);
 	}
 }
 
@@ -231,7 +231,7 @@ void UGFS_InputMappingContext_Switch::OnEnter_Implementation()
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute InputMappingContext Switch step when it has unset InputMappingContext (%s)"), *flow->GetName());
 	}
 
-	OnComplete(EGFSStatus::Finished);
+	OnComplete(EGameFlowStepStatus::Finished);
 }
 
 void UGFS_InputMappingContext_Switch::OnExit_Implementation()
@@ -260,7 +260,7 @@ void UGFS_InputMappingContext_Switch::OnExit_Implementation()
 		UE_LOG(LogUE_Plugin_GameFlow, Warning, TEXT("Cant execute InputMappingContext Switch step when it has unset InputMappingContext (%s)"), *flow->GetName());
 	}
 
-	OnComplete(EGFSStatus::Finished);
+	OnComplete(EGameFlowStepStatus::Finished);
 }
 
 FText UGFS_InputMappingContext_Switch::GenerateDescription_Implementation() const

@@ -17,7 +17,7 @@ class UInputMappingContext;
 //------------------------------------------------------
 
 UCLASS()
-class UE_PLUGIN_GAMEFLOW_API UGFS_ShowWidget : public UGFS_Base
+class UE_PLUGIN_GAMEFLOW_API UGFS_ShowWidget : public UGameFlowStep
 {
 	GENERATED_UCLASS_BODY()
 
@@ -56,7 +56,7 @@ protected:
 //------------------------------------------------------
 
 UCLASS()
-class UE_PLUGIN_GAMEFLOW_API UGFS_SaveGame_Load : public UGFS_Base
+class UE_PLUGIN_GAMEFLOW_API UGFS_SaveGame_Load : public UGameFlowStep
 {
 	GENERATED_UCLASS_BODY()
 
@@ -86,7 +86,7 @@ protected:
 //------------------------------------------------------
 
 UCLASS()
-class UE_PLUGIN_GAMEFLOW_API UGFS_Level_Load : public UGFS_Base
+class UE_PLUGIN_GAMEFLOW_API UGFS_Level_Load : public UGameFlowStep
 {
 	GENERATED_UCLASS_BODY()
 
@@ -110,7 +110,7 @@ protected:
 //------------------------------------------------------
 
 UCLASS()
-class UE_PLUGIN_GAMEFLOW_API UGFS_InputMappingContext_Switch : public UGFS_Base
+class UE_PLUGIN_GAMEFLOW_API UGFS_InputMappingContext_Switch : public UGameFlowStep
 {
 	GENERATED_UCLASS_BODY()
 
