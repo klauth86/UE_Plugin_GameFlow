@@ -359,12 +359,6 @@ namespace OperationFactory
 }
 
 //------------------------------------------------------
-// UGameFlowStep
-//------------------------------------------------------
-
-void UGameFlowStep::OnComplete(const EGameFlowStepStatus status) const { OperationContext[CatchingOperationId].ReportStepStatus(this, status); }
-
-//------------------------------------------------------
 // UGameFlowState
 //------------------------------------------------------
 
@@ -1348,7 +1342,7 @@ OperationId UGameFlow::MakeTransition_Internal(UGameFlowTransitionKey* transitio
 	return OperationId();
 }
 
-void UGameFlow::SetWorldPtr(FGuid& activeState, UWorld* world, const bool force)
+void UGameFlow::SetWorldContext_Internal(FGuid& activeState, UWorld* world, const bool force)
 {
 	if (!ActiveTransactionId || force)
 	{
@@ -1370,13 +1364,13 @@ void UGameFlow::SetWorldPtr(FGuid& activeState, UWorld* world, const bool force)
 			if (UGameFlow* subFlow = stateEntry.Value->SubFlow)
 			{
 				FGuid& subFlowActiveState = stateEntry.Value->bInstancedSubFlow ? stateEntry.Value->SubFlowActiveState : subFlow->ActiveState;
-				subFlow->SetWorldPtr(subFlowActiveState, world, force);
+				subFlow->SetWorldContext_Internal(subFlowActiveState, world, force);
 			}
 		}
 	}
 	else
 	{
-		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant set world in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *RepeatTab(0), *GetName());
+		UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant set World Context in flow that is transitioning {%s}!"), *FDateTime::Now().ToString(), *RepeatTab(0), *GetName());
 	}
 }
 
@@ -1389,3 +1383,9 @@ void UGameFlow::EnqueueOperation(const OperationId operationId) const
 
 	OperationContext[TransactionContext[ActiveTransactionId]].NextOperationId = operationId;
 }
+
+//------------------------------------------------------
+// UGameFlowStep
+//------------------------------------------------------
+
+void UGameFlowStep::OnComplete(const EGameFlowStepStatus status) const { OperationContext[CatchingOperationId].ReportStepStatus(this, status); }
