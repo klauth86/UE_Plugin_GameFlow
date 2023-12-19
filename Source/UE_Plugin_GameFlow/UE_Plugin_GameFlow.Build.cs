@@ -8,9 +8,7 @@ public class UE_Plugin_GameFlow : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
-		
-		PrivateDependencyModuleNames.AddRange(new string[] { "GameFlowCore", "UMG", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

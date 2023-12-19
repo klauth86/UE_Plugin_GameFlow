@@ -698,7 +698,7 @@ void UGameFlow::OnAutoTransition(const OperationId operationId)
 
 	OperationId nextOperationId = flow->MakeTransition_Internal(stateObject->TransitionKey, operationInfo.OperationFlags, operationInfo.NextOperationId, operationInfo.AdditiveDepth);
 
-	ExecuteOperation(OperationContext[operationId].NextOperationId = nextOperationId);
+	ExecuteOperation(OperationContext[operationId].NextOperationId = nextOperationId ? nextOperationId : OperationContext[operationId].NextOperationId);
 }
 
 void UGameFlow::OnExitState(const OperationId operationId)
