@@ -56,7 +56,7 @@ namespace EOperationType
 
 	const OperationId CatchingOperation =			1031;
 
-	const OperationId EnqueuedTransition =			1051;
+	const OperationId DeferredTransition =			1051;
 
 	const OperationId Reset =						1091;
 	const OperationId ResetSubFlows =				1092;
@@ -293,7 +293,7 @@ public:
 
 	static void OnCatchingOperation(const OperationId operationId);
 
-	static void OnEnqueuedTransition(const OperationId operationId);
+	static void OnDeferredTransition(const OperationId operationId);
 
 	static void OnReset(const OperationId operationId);
 
@@ -394,7 +394,7 @@ public:
 	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isEnqueued);
+	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isDeferred);
 
 	/**
 	* Sets World Context for Flow
