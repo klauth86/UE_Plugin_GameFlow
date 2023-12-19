@@ -391,7 +391,7 @@ public:
 	*
 	* @param transitionKey			Transition Key
 	* @param executeSteps			If true, this transition will execute steps
-	* @param executeAsQueued		if true, this transition will be started just after current if Flow is transitioning; regular call in other case
+	* @param isDeferred				if true, this transition will be started just after current if Flow is transitioning; regular call in other case
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	void MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isDeferred);
