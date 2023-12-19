@@ -97,7 +97,7 @@ FString GetOperationTypeString(const OperationId operationType)
 
 	if (operationType == EOperationType::CatchingOperation) result = "Catch Steps";
 
-	if (operationType == EOperationType::EnqueuedTransition) result = "Enqueued Transition";
+	if (operationType == EOperationType::DeferredTransition) result = "Deferred Transition";
 
 	if (operationType == EOperationType::Reset) result = "Reset";
 	if (operationType == EOperationType::ResetSubFlows) result = "Reset SubFlows";
@@ -311,9 +311,9 @@ namespace OperationFactory
 		return operationId;
 	}
 
-	OperationId EnqueuedTransition(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey, const uint32 additiveDepth)
+	OperationId DeferredTransition(FGuid& activeState, UGameFlow* flow, const OperationId nextOperationId, const OperationFlags operationFlags, UGameFlowTransitionKey* transitionKey, const uint32 additiveDepth)
 	{
-		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::EnqueuedTransition;
+		const OperationId operationId = GetOperationId() + OPERATION_TYPE_MASK * EOperationType::DeferredTransition;
 		FOperationInfo operationInfo = FOperationInfo(activeState, flow, activeState, nextOperationId, operationFlags, transitionKey, additiveDepth);
 		////// Debug operationInfo.TypeString = GetOperationTypeString(operationId / OPERATION_TYPE_MASK);
 		OperationContext.Add(operationId, operationInfo);
@@ -389,7 +389,7 @@ void UGameFlow::CancelOperation(const OperationId operationId, const OperationId
 	if (operationType == EOperationType::EnterState_SubFlow) return OnCancel_State_SubFlow(activeOperationId, nextOperationId);
 	if (operationType == EOperationType::ExitState_SubFlow) return OnCancel_State_SubFlow(activeOperationId, nextOperationId);
 
-	if (operationType == EOperationType::EnqueuedTransition) return OnCancel_State_SubFlow(activeOperationId, nextOperationId);
+	if (operationType == EOperationType::DeferredTransition) return OnCancel_State_SubFlow(activeOperationId, nextOperationId);
 
 	check(0);
 }
@@ -431,7 +431,7 @@ void UGameFlow::ExecuteOperation(const OperationId operationId)
 
 				if (operationType == EOperationType::CatchingOperation) return OnCatchingOperation(operationId);
 
-				if (operationType == EOperationType::EnqueuedTransition) return OnEnqueuedTransition(operationId);
+				if (operationType == EOperationType::DeferredTransition) return OnDeferredTransition(operationId);
 
 				if (operationType == EOperationType::Reset) return OnReset(operationId);
 				if (operationType == EOperationType::ResetSubFlows) return OnResetSubFlows(operationId);
@@ -696,9 +696,9 @@ void UGameFlow::OnAutoTransition(const OperationId operationId)
 	UGameFlow* flow = operationInfo.Flow.Get();
 	UGameFlowState* stateObject = flow->States[operationInfo.ActiveState];
 
-	OperationId nextOperationId = flow->MakeTransition_Internal(stateObject->TransitionKey, operationInfo.OperationFlags, operationInfo.NextOperationId, operationInfo.AdditiveDepth);
+	const OperationId nextOperationId = flow->MakeTransition_Internal(stateObject->TransitionKey, operationInfo.OperationFlags, operationInfo.NextOperationId, operationInfo.AdditiveDepth);
 
-	ExecuteOperation(OperationContext[operationId].NextOperationId = nextOperationId);
+	ExecuteOperation(OperationContext[operationId].NextOperationId = nextOperationId ? nextOperationId : OperationContext[operationId].NextOperationId);
 }
 
 void UGameFlow::OnExitState(const OperationId operationId)
@@ -875,15 +875,15 @@ void UGameFlow::OnCatchingOperation(const OperationId operationId)
 	ExecuteOperation(operationInfo.NextOperationId);
 }
 
-void UGameFlow::OnEnqueuedTransition(const OperationId operationId)
+void UGameFlow::OnDeferredTransition(const OperationId operationId)
 {
 	FOperationInfo& operationInfo = OperationContext[operationId];
 
 	UGameFlow* flow = operationInfo.Flow.Get();
 
-	const OperationId transitionOperationId = flow->MakeTransition_Internal(operationInfo.TransitionKey.Get(), operationInfo.OperationFlags, operationInfo.NextOperationId, operationInfo.AdditiveDepth);
+	const OperationId nextOperationId = flow->MakeTransition_Internal(operationInfo.TransitionKey.Get(), operationInfo.OperationFlags, operationInfo.NextOperationId, operationInfo.AdditiveDepth);
 
-	ExecuteOperation(operationInfo.NextOperationId = transitionOperationId);
+	ExecuteOperation(operationInfo.NextOperationId = nextOperationId ? nextOperationId : operationInfo.NextOperationId);
 }
 
 void UGameFlow::OnReset(const OperationId operationId)
@@ -1052,7 +1052,7 @@ void UGameFlow::DestroyStateTransition(const FGuid& stateToDestroy)
 	{
 		TSet<FGuid> toTransitionStates;
 
-		for (TPair<FGuid, TObjectPtr<UGameFlowTransition>> transitionEntry : TransitionCollections[stateToDestroy].Transitions)
+		for (TPair<FGuid, TObjectPtr<UGameFlowTransition>>& transitionEntry : TransitionCollections[stateToDestroy].Transitions)
 		{
 			toTransitionStates.FindOrAdd(transitionEntry.Key);
 		}
@@ -1215,7 +1215,7 @@ void UGameFlow::ResetFlow(const bool resetAnySubFlow)
 	ResetFlow_Params(ActiveState, operationFlags, OperationId(), 0, false);
 }
 
-void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isEnqueued)
+void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool executeSteps, const bool resetActiveSubFlow, const bool isDeferred)
 {
 	if (transitionKey)
 	{
@@ -1225,11 +1225,11 @@ void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool
 			if (executeSteps) operationFlags |= EOperationFlags::ExecuteSteps;
 			if (resetActiveSubFlow) operationFlags |= EOperationFlags::ResetActiveSubFlow;
 
-			if (!ActiveTransactionId || isEnqueued)
+			if (!ActiveTransactionId || isDeferred)
 			{
 				const OperationId transactionEndId = OperationFactory::TransactionEnd(ActiveState, this, OperationId(), 0);
-				const OperationId transitionOperationId = isEnqueued
-					? OperationFactory::EnqueuedTransition(ActiveState, this, transactionEndId, operationFlags, transitionKey, 0)
+				const OperationId transitionOperationId = isDeferred
+					? OperationFactory::DeferredTransition(ActiveState, this, transactionEndId, operationFlags, transitionKey, 0)
 					: MakeTransition_Internal(transitionKey, operationFlags, transactionEndId, 0);
 				const OperationId transactionBeginId = OperationFactory::TransactionBegin(ActiveState, this, transitionOperationId, 0, false);
 
@@ -1237,11 +1237,7 @@ void UGameFlow::MakeTransition(UGameFlowTransitionKey* transitionKey, const bool
 				{
 					TransactionContext.Add(transactionBeginId, transactionEndId);
 
-					return isEnqueued ? EnqueueOperation(transactionBeginId) : ExecuteOperation(transactionBeginId);
-				}
-				else
-				{
-					UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant find any transition in flow for Transition Key %s {%s}!"), *FDateTime::Now().ToString(), *RepeatTab(0), *transitionKey->GetName(), *GetName());
+					return isDeferred ? EnqueueOperation(transactionBeginId) : ExecuteOperation(transactionBeginId);
 				}
 			}
 			else
@@ -1338,6 +1334,8 @@ OperationId UGameFlow::MakeTransition_Internal(UGameFlowTransitionKey* transitio
 			}
 		}
 	}
+
+	UE_LOG(LogGameFlow, Warning, TEXT("[%s][FLOW]%sCant find any transition in flow for Transition Key %s {%s}!"), *FDateTime::Now().ToString(), *RepeatTab(0), *transitionKey->GetName(), *GetName());
 
 	return OperationId();
 }
