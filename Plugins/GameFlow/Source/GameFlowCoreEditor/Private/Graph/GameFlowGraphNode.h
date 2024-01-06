@@ -74,7 +74,6 @@ public:
 	virtual FText GetTooltipText() const override;
 	virtual bool CanDuplicateNode() const override { return true; }
 	virtual void OnRenameNode(const FString& NewName) override;
-	virtual void DestroyNode() override;
 	// End of UEdGraphNode interface
 
 	UPROPERTY()
@@ -171,7 +170,7 @@ protected:
 
 	TSharedPtr<SVerticalBox> StepsVerticalBoxPtr;
 
-	TWeakObjectPtr<UGameFlow> OwningGameFlow;
+	UGameFlow* OwningGameFlow;
 };
 
 //------------------------------------------------------
@@ -187,8 +186,8 @@ public:
 	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Transition* InNode);
 
 	// SNodePanel::SNode interface
-	virtual void MoveTo(const FVector2D& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty = true) override;
-	virtual bool RequiresSecondPassLayout() const override;
+	virtual void MoveTo(const FVector2D& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty = true) override {} // Ignored; position is set by the location of the attached state nodes
+	virtual bool RequiresSecondPassLayout() const override { return true; }
 	virtual void PerformSecondPassLayout(const TMap< UObject*, TSharedRef<SNode> >& NodeToWidgetLookup) const override;
 	// End of SNodePanel::SNode interface
 
@@ -211,8 +210,9 @@ private:
 	/** Cache of the widget representing the previous state node */
 	mutable TWeakPtr<SNode> PrevStateNodeWidgetPtr;
 
-	TWeakObjectPtr<UGameFlow> OwningGameFlow;
-	TWeakObjectPtr<UGameFlowGraphNode_Transition> TransitionGraphNode;
+	UGameFlow* OwningGameFlow;
+
+	UGameFlowGraphNode_Transition* TransitionGraphNode;
 
 private:
 	FText GetPreviewCornerText(bool reverse) const;

@@ -11,13 +11,4 @@ UCLASS()
 class UGameFlowGraph : public UEdGraph
 {
 	GENERATED_UCLASS_BODY()
-
-public:
-
-	void SetGameFlow(UGameFlow* gameFlow) { GameFlow = gameFlow; }
-
-protected:
-
-	UPROPERTY()
-	UGameFlow* GameFlow;
 };
