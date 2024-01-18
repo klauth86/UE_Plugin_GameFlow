@@ -341,58 +341,6 @@ void SGameFlowGraphNode_State::Construct(const FArguments& InArgs, UGameFlowGrap
 	this->UpdateGraphNode();
 }
 
-FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor() const
-{
-	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
-	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
-	FLinearColor ActiveStateColorBright(1.f, 0.6f, 0.35f);
-
-	return GetBorderBackgroundColor_Internal(InactiveStateColor, ActiveStateColorDim, ActiveStateColorBright);
-}
-
-FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const
-{
-	if (OwningGameFlow->IsStateActive(GraphNode->NodeGuid))
-	{
-		const float angleVelocity = 12;
-		return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, FMath::Sin(GameFlowEditorTime * angleVelocity));
-	}
-
-	return InactiveStateColor;
-}
-
-void SGameFlowGraphNode_State::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	SGraphNode::OnMouseEnter(MyGeometry, MouseEvent);
-
-	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
-	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
-
-	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
-	check(OwnerPanel.IsValid());
-
-	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
-	{
-		OwnerPanel->AddPinToHoverSet(OutputPin->LinkedTo[LinkIndex]);
-	}
-}
-
-void SGameFlowGraphNode_State::OnMouseLeave(const FPointerEvent& MouseEvent)
-{
-	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
-	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
-
-	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
-	check(OwnerPanel.IsValid());
-
-	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
-	{
-		OwnerPanel->RemovePinFromHoverSet(OutputPin->LinkedTo[LinkIndex]);
-	}
-
-	SGraphNode::OnMouseLeave(MouseEvent);
-}
-
 void SGameFlowGraphNode_State::UpdateGraphNode()
 {
 	InputPins.Empty();
@@ -494,6 +442,73 @@ void SGameFlowGraphNode_State::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 	{
 		InputPins.Add(PinToAdd);
 	}
+}
+
+void SGameFlowGraphNode_State::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	SGraphNode::OnMouseEnter(MyGeometry, MouseEvent);
+
+	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
+	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
+
+	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
+	check(OwnerPanel.IsValid());
+
+	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
+	{
+		OwnerPanel->AddPinToHoverSet(OutputPin->LinkedTo[LinkIndex]);
+	}
+}
+
+void SGameFlowGraphNode_State::OnMouseLeave(const FPointerEvent& MouseEvent)
+{
+	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
+	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
+
+	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
+	check(OwnerPanel.IsValid());
+
+	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
+	{
+		OwnerPanel->RemovePinFromHoverSet(OutputPin->LinkedTo[LinkIndex]);
+	}
+
+	SGraphNode::OnMouseLeave(MouseEvent);
+}
+
+FReply SGameFlowGraphNode_State::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	{
+		UGameFlow* subFlow = OwningGameFlow->GetStates()[GraphNode->NodeGuid]->SubFlow;
+
+		if (subFlow != nullptr && OwningGameFlow != subFlow)
+		{
+			FGameFlowCoreEditorModule::OpenAssetEditor({ OwningGameFlow->GetStates()[GraphNode->NodeGuid]->SubFlow });
+			return FReply::Handled();
+		}
+	}
+	return FReply::Unhandled();
+}
+
+FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor() const
+{
+	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
+	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
+	FLinearColor ActiveStateColorBright(1.f, 0.6f, 0.35f);
+
+	return GetBorderBackgroundColor_Internal(InactiveStateColor, ActiveStateColorDim, ActiveStateColorBright);
+}
+
+FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const
+{
+	if (OwningGameFlow->IsStateActive(GraphNode->NodeGuid))
+	{
+		const float anglularFreq = 7;
+		return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, FMath::Sin(GameFlowEditorTime * anglularFreq));
+	}
+
+	return InactiveStateColor;
 }
 
 FText SGameFlowGraphNode_State::GetPreviewCornerText() const
@@ -2088,16 +2103,7 @@ UClass* FAssetTypeActions_GameFlow::GetSupportedClass() const { return UGameFlow
 
 void FAssetTypeActions_GameFlow::OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor)
 {
-	EToolkitMode::Type Mode = EditWithinLevelEditor.IsValid() ? EToolkitMode::WorldCentric : EToolkitMode::Standalone;
-
-	for (TArray<UObject*>::TConstIterator ObjIt = InObjects.CreateConstIterator(); ObjIt; ++ObjIt)
-	{
-		if (UGameFlow* gameFlow = Cast<UGameFlow>(*ObjIt))
-		{
-			TSharedRef<FGameFlowEditor> NewEditor(new FGameFlowEditor());
-			NewEditor->InitGameFlowEditor(Mode, EditWithinLevelEditor, gameFlow);
-		}
-	}
+	FGameFlowCoreEditorModule::OpenAssetEditor(InObjects);
 }
 
 uint32 FAssetTypeActions_GameFlow::GetCategories() { return EAssetTypeCategories::Gameplay; }
@@ -2171,6 +2177,18 @@ void FGameFlowCoreEditorModule::ShutdownModule()
 	}
 
 	RegisteredAssetTypeActions.Empty();
+}
+
+void FGameFlowCoreEditorModule::OpenAssetEditor(const TArray<UObject*>& InObjects)
+{
+	for (TArray<UObject*>::TConstIterator ObjIt = InObjects.CreateConstIterator(); ObjIt; ++ObjIt)
+	{
+		if (UGameFlow* gameFlow = Cast<UGameFlow>(*ObjIt))
+		{
+			TSharedRef<FGameFlowEditor> NewEditor(new FGameFlowEditor());
+			NewEditor->InitGameFlowEditor(EToolkitMode::Standalone, nullptr, gameFlow);
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

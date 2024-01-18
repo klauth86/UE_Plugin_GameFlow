@@ -44,7 +44,8 @@ public class GameFlowCoreEditor : ModuleRules
 				"Engine",
 				"BlueprintGraph",
 				"ToolMenus",
-				
+				"InputCore",
+
 				"GameFlowCore",
 				// ... add private dependencies that you statically link with here ...	
 			}
