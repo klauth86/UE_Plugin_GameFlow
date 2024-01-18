@@ -1226,7 +1226,6 @@ void UGameFlowGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeCont
 			{
 				// Node contextual actions
 				Section.AddMenuEntry(FGenericCommands::Get().Delete);
-				Section.AddMenuEntry(FGenericCommands::Get().Cut);
 				Section.AddMenuEntry(FGenericCommands::Get().Copy);
 				Section.AddMenuEntry(FGenericCommands::Get().Duplicate);
 				Section.AddMenuEntry(FGraphEditorCommands::Get().ReconstructNodes);
@@ -1422,8 +1421,6 @@ protected:
 	virtual void PostRedo(bool bSuccess) override;
 	// End of FEditorUndoClient
 
-	FGraphPanelSelectionSet GetSelectedNodes() const;
-
 	void SelectAllNodes();
 
 	bool CanSelectAllNodes() const { return true; }
@@ -1434,13 +1431,29 @@ protected:
 
 	void CopySelectedNodes();
 
+	template<class Predicate>
+	bool CheckPredicateOnSelectedNodes(const Predicate& predicate) const
+	{
+		if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+		{
+			if (graphEditor.IsValid())
+			{
+				const FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
+
+				for (FGraphPanelSelectionSet::TConstIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
+				{
+					if (predicate(Cast<UEdGraphNode>(*NodeIt)))
+					{
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
 	bool CanCopyNodes() const;
-
-	void DeleteSelectedDuplicatableNodes();
-
-	void CutSelectedNodes() { CopySelectedNodes(); DeleteSelectedDuplicatableNodes(); }
-
-	bool CanCutNodes() const { return CanCopyNodes() && CanDeleteNodes(); }
 
 	void PasteNodes();
 
@@ -1454,6 +1467,10 @@ protected:
 
 	bool CanCreateComment() const;
 
+	void StoreSelectedNodes(TSet<FGuid>& selectedNodes);
+
+	void ApplySelectedNodes(const TSet<FGuid>& selectedNodes);
+
 protected:
 
 	UGameFlow* GameFlow;
@@ -1463,6 +1480,10 @@ protected:
 	TWeakPtr<SGraphEditor> GraphEditorPtr;
 
 	TSharedPtr<IDetailsView> DetailsView;
+
+	TSet<FGuid> PrevSelectedNodes;
+
+	TSet<FGuid> NextSelectedNodes;
 };
 
 const FName FGameFlowEditor::AppIdentifier(TEXT("FGameFlowEditor_AppIdentifier"));
@@ -1614,11 +1635,6 @@ void FGameFlowEditor::CreateCommandList()
 		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanCopyNodes)
 	);
 
-	GraphEditorCommands->MapAction(FGenericCommands::Get().Cut,
-		FExecuteAction::CreateRaw(this, &FGameFlowEditor::CutSelectedNodes),
-		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanCutNodes)
-	);
-
 	GraphEditorCommands->MapAction(FGenericCommands::Get().Paste,
 		FExecuteAction::CreateRaw(this, &FGameFlowEditor::PasteNodes),
 		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanPasteNodes)
@@ -1677,8 +1693,13 @@ void FGameFlowEditor::OnNodeTitleCommitted(const FText& NewText, ETextCommit::Ty
 	if (NodeBeingChanged)
 	{
 		const FScopedTransaction Transaction(LOCTEXT("Transaction_FGameFlowEditor::OnNodeTitleCommitted", "Rename Node"));
+
+		StoreSelectedNodes(PrevSelectedNodes);
+
 		NodeBeingChanged->Modify();
 		NodeBeingChanged->OnRenameNode(NewText.ToString());
+
+		StoreSelectedNodes(NextSelectedNodes);
 	}
 }
 
@@ -1693,6 +1714,7 @@ void FGameFlowEditor::PostUndo(bool bSuccess)
 			{
 				graphEditor->ClearSelectionSet();
 				graphEditor->NotifyGraphChanged();
+				ApplySelectedNodes(PrevSelectedNodes);
 			}
 		}
 		FSlateApplication::Get().DismissAllMenus();
@@ -1710,25 +1732,11 @@ void FGameFlowEditor::PostRedo(bool bSuccess)
 			{
 				graphEditor->ClearSelectionSet();
 				graphEditor->NotifyGraphChanged();
+				ApplySelectedNodes(NextSelectedNodes);
 			}
 		}
 		FSlateApplication::Get().DismissAllMenus();
 	}
-}
-
-FGraphPanelSelectionSet FGameFlowEditor::GetSelectedNodes() const
-{
-	FGraphPanelSelectionSet CurrentSelection;
-
-	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
-	{
-		if (graphEditor.IsValid())
-		{
-			CurrentSelection = graphEditor->GetSelectedNodes();
-		}
-	}
-
-	return CurrentSelection;
 }
 
 void FGameFlowEditor::SelectAllNodes()
@@ -1748,13 +1756,7 @@ void FGameFlowEditor::DeleteSelectedNodes()
 	{
 		if (graphEditor.IsValid())
 		{
-			const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
-
-			UEdGraph* graph = graphEditor->GetCurrentGraph();
-			graph->Modify();
-
 			const FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
-			graphEditor->ClearSelectionSet();
 
 			TArray<UGameFlowGraphNode_Transition*> transitionNodes;
 			TArray<UEdGraphNode*> otherNodes;
@@ -1777,144 +1779,83 @@ void FGameFlowEditor::DeleteSelectedNodes()
 				}
 			}
 
-			if (transitionNodes.Num() > 0 || otherNodes.ContainsByPredicate([](const UEdGraphNode& graphNode) { return graphNode.IsA<UGameFlowGraphNode_State>(); }))
+			if (transitionNodes.Num() > 0 || otherNodes.Num() > 0)
 			{
-				GameFlow->Modify();
-			}
+				const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
 
-			// We cant implement this logic in DestroyNode because links will be already broken and we cant get prevNode and nextNode
+				StoreSelectedNodes();
 
-			for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
-			{
-				const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
-				const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
-				GameFlow->DestroyTransition(prevNode->NodeGuid, nextNode->NodeGuid);
+				UEdGraph* graph = graphEditor->GetCurrentGraph();
+				graph->Modify();
 
-				graph->GetSchema()->BreakPinLinks(*transitionNode->Pins[0], false);
-			}
+				graphEditor->ClearSelectionSet();
 
-			for (UEdGraphNode* otherNode : otherNodes)
-			{
-				GameFlow->DestroyState(otherNode->NodeGuid);
+				if (transitionNodes.Num() > 0 || otherNodes.ContainsByPredicate([](const UEdGraphNode* graphNode) { return graphNode->IsA<UGameFlowGraphNode_State>(); }))
+				{
+					GameFlow->Modify();
+				}
 
-				otherNode->Modify();
-				graph->GetSchema()->BreakNodeLinks(*otherNode);
+				// We cant implement this logic in DestroyNode because links will be already broken and we cant get prevNode and nextNode
 
-				otherNode->DestroyNode();
+				for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
+				{
+					const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
+					const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
+					GameFlow->DestroyTransition(prevNode->NodeGuid, nextNode->NodeGuid);
+
+					graph->GetSchema()->BreakPinLinks(*transitionNode->Pins[0], false);
+				}
+
+				for (UEdGraphNode* otherNode : otherNodes)
+				{
+					GameFlow->DestroyState(otherNode->NodeGuid);
+
+					otherNode->Modify();
+					graph->GetSchema()->BreakNodeLinks(*otherNode);
+
+					otherNode->DestroyNode();
+				}
 			}
 		}
 	}
 }
 
-bool FGameFlowEditor::CanDeleteNodes() const
-{
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-		if (Node && Node->CanUserDeleteNode()) return true;
-	}
-
-	return false;
-}
+bool FGameFlowEditor::CanDeleteNodes() const { return CheckPredicateOnSelectedNodes([](const UEdGraphNode* node) { return node && node->CanUserDeleteNode(); }); }
 
 void FGameFlowEditor::CopySelectedNodes()
 {
-	FGraphPanelSelectionSet InitialSelectedNodes = GetSelectedNodes();
-
-	TSet<UEdGraphNode*> graphNodesToSelect;
-
 	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
 	{
 		if (graphEditor.IsValid())
 		{
+			FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
 
-			for (UEdGraphNode* graphNodeToSelect : graphNodesToSelect)
+			for (FGraphPanelSelectionSet::TIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
 			{
-				graphEditor->SetNodeSelection(graphNodeToSelect, true);
-			}
-		}
-	}
-
-	FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-
-	for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-
-		if (Node == nullptr)
-		{
-			SelectedIter.RemoveCurrent();
-			continue;
-		}
-
-		Node->PrepareForCopying();
-
-		if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(Node))
-		{
-			stateNode->PreviousOuter = stateNode->GetGraph()->GetTypedOuter<UGameFlow>();
-		}
-	}
-
-	FString ExportedText;
-	FEdGraphUtilities::ExportNodesToText(SelectedNodes, ExportedText);
-	FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
-
-	for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-
-		if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(Node))
-		{
-			stateNode->PreviousOuter = nullptr;
-		}
-	}
-}
-
-bool FGameFlowEditor::CanCopyNodes() const
-{
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-		if (Node && Node->CanDuplicateNode()) return true;
-	}
-
-	return false;
-}
-
-void FGameFlowEditor::DeleteSelectedDuplicatableNodes()
-{
-	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
-	{
-		if (graphEditor.IsValid())
-		{
-			const FGraphPanelSelectionSet OldSelectedNodes = graphEditor->GetSelectedNodes();
-			graphEditor->ClearSelectionSet();
-
-			for (FGraphPanelSelectionSet::TConstIterator SelectedIter(OldSelectedNodes); SelectedIter; ++SelectedIter)
-			{
-				UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-				if (Node && Node->CanDuplicateNode())
+				UEdGraphNode* node = Cast<UEdGraphNode>(*NodeIt);
+				if (node && node->CanDuplicateNode())
 				{
-					graphEditor->SetNodeSelection(Node, true);
+					node->PrepareForCopying();
+
+					if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(node))
+					{
+						stateNode->PreviousOuter = stateNode->GetGraph()->GetTypedOuter<UGameFlow>();
+					}
+				}
+				else
+				{
+					NodeIt.RemoveCurrent();
 				}
 			}
 
-			DeleteSelectedNodes();
-
-			graphEditor->ClearSelectionSet();
-
-			for (FGraphPanelSelectionSet::TConstIterator SelectedIter(OldSelectedNodes); SelectedIter; ++SelectedIter)
-			{
-				if (UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter))
-				{
-					graphEditor->SetNodeSelection(Node, true);
-				}
-			}
+			FString ExportedText;
+			FEdGraphUtilities::ExportNodesToText(SelectedNodes, ExportedText);
+			FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
 		}
 	}
 }
+
+bool FGameFlowEditor::CanCopyNodes() const { return CheckPredicateOnSelectedNodes([](const UEdGraphNode* node) { return node && node->CanDuplicateNode(); }); }
 
 void FGameFlowEditor::PasteNodes()
 {
@@ -1928,6 +1869,8 @@ void FGameFlowEditor::PasteNodes()
 
 			// Undo/Redo support
 			const FScopedTransaction Transaction(FGenericCommands::Get().Paste->GetDescription());
+
+			StoreSelectedNodes();
 
 			EdGraph->Modify();
 
@@ -2075,7 +2018,6 @@ bool FGameFlowEditor::CanPasteNodes() const
 		{
 			FString ClipboardContent;
 			FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
-
 			return FEdGraphUtilities::CanImportNodesFromText(graphEditor->GetCurrentGraph(), ClipboardContent);
 		}
 	}
@@ -2090,10 +2032,8 @@ void FGameFlowEditor::OnCreateComment()
 		if (graphEditor.IsValid())
 		{
 			TSharedPtr<FEdGraphSchemaAction> Action = graphEditor->GetCurrentGraph()->GetSchema()->GetCreateCommentAction();
-
-			TSharedPtr<FGameFlowGraphSchemaAction_NewComment> newCommentAction = StaticCastSharedPtr<FGameFlowGraphSchemaAction_NewComment>(Action);
-
-			if (newCommentAction.IsValid())
+			
+			if (TSharedPtr<FGameFlowGraphSchemaAction_NewComment> newCommentAction = StaticCastSharedPtr<FGameFlowGraphSchemaAction_NewComment>(Action))
 			{
 				graphEditor->GetBoundsForSelectedNodes(newCommentAction->SelectedNodesBounds, 50);
 				newCommentAction->PerformAction(graphEditor->GetCurrentGraph(), nullptr, FVector2D());
@@ -2104,8 +2044,54 @@ void FGameFlowEditor::OnCreateComment()
 
 bool FGameFlowEditor::CanCreateComment() const
 {
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	return SelectedNodes.Num() > 0;
+	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+	{
+		if (graphEditor.IsValid())
+		{
+			return graphEditor->GetSelectedNodes().Num() > 0;
+		}
+	}
+
+	return false;
+}
+
+void FGameFlowEditor::StoreSelectedNodes(TSet<FGuid>& selectedNodes)
+{
+	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+	{
+		if (graphEditor.IsValid())
+		{
+			FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
+
+			for (FGraphPanelSelectionSet::TIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
+			{
+				if (UEdGraphNode* node = Cast<UEdGraphNode>(*NodeIt))
+				{
+					selectedNodes.FindOrAdd(node->NodeGuid);
+				}
+			}
+		}
+	}
+}
+
+void FGameFlowEditor::ApplySelectedNodes(const TSet<FGuid>& selectedNodes)
+{
+	if (selectedNodes.Num() > 0)
+	{
+		if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+		{
+			if (graphEditor.IsValid())
+			{
+				for (const FGuid selectedNode : selectedNodes)
+				{
+					if (TObjectPtr<UEdGraphNode>* node = graphEditor->GetCurrentGraph()->Nodes.FindByPredicate([selectedNode](const UEdGraphNode* node) { node->NodeGuid == selectedNode; }))
+					{
+						graphEditor->SetNodeSelection(node->Get(), true);
+					}
+				}
+			}
+		}
+	}
 }
 
 //------------------------------------------------------
