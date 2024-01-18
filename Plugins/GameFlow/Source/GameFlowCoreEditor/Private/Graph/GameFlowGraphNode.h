@@ -96,6 +96,12 @@ class UGameFlowGraphNode_Transition : public UGameFlowGraphNode_Base
 
 public:
 
+	template<class T>
+	T* GetPinLinkedNodeAs(const int32 pinIndex) const
+	{
+		return Pins.IsValidIndex(pinIndex) && Pins[pinIndex] && Pins[pinIndex]->LinkedTo.Num() > 0 ? Cast<T>(Pins[pinIndex]->LinkedTo[0]->GetOwningNode()) : nullptr;
+	}
+
 	//~ Begin UEdGraphNode Interface
 	virtual void AllocateDefaultPins() override;
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
@@ -106,8 +112,8 @@ public:
 	virtual void PostPasteNode() override;
 	//~ End UEdGraphNode Interface
 
-	UGameFlowGraphNode_Base* GetPreviousState() const;
-	UGameFlowGraphNode_Base* GetNextState() const;
+	UGameFlowGraphNode_Base* GetPrevNode() const { return GetPinLinkedNodeAs<UGameFlowGraphNode_Base>(0); }
+	UGameFlowGraphNode_Base* GetNextNode() const { return GetPinLinkedNodeAs<UGameFlowGraphNode_Base>(1); }
 	void CreateConnections(UGameFlowGraphNode_Base* PreviousState, UGameFlowGraphNode_Base* NextState);
 };
 
@@ -208,7 +214,7 @@ private:
 	TSharedPtr<STextEntryPopup> TextEntryWidget;
 
 	/** Cache of the widget representing the previous state node */
-	mutable TWeakPtr<SNode> PrevStateNodeWidgetPtr;
+	mutable TWeakPtr<SNode> PrevNodeWidgetPtr;
 
 	UGameFlow* OwningGameFlow;
 

@@ -42,6 +42,8 @@ TSharedPtr<T> AddNewActionAs(FGraphContextMenuBuilder& ContextMenuBuilder, const
 	return Action;
 }
 
+float GameFlowEditorTime = 0;
+
 //------------------------------------------------------
 // UGameFlowGraphNode_Start
 //------------------------------------------------------
@@ -74,7 +76,7 @@ UEdGraphNode* UGameFlowGraphNode_Start::GetOutputNode() const
 	if (Pins.Num() > 0 && Pins[0] != NULL)
 	{
 		check(Pins[0]->LinkedTo.Num() <= 1);
-		if (Pins[0]->LinkedTo.Num() > 0 && Pins[0]->LinkedTo[0]->GetOwningNode() != NULL)
+		if (Pins[0]->LinkedTo.Num() == 1 && Pins[0]->LinkedTo[0] != NULL)
 		{
 			return Pins[0]->LinkedTo[0]->GetOwningNode();
 		}
@@ -84,10 +86,11 @@ UEdGraphNode* UGameFlowGraphNode_Start::GetOutputNode() const
 
 void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 {
+	const UEdGraphNode* outputNode = GetOutputNode();
+	const FGuid entryStateId = outputNode ? outputNode->NodeGuid : FGuid();
+	
 	UGameFlow* gameFlow = GetGraph()->GetTypedOuter<UGameFlow>();
-	
-	const FGuid entryStateId = Pins[0]->LinkedTo.Num() == 1 ? Pins[0]->LinkedTo[0]->GetOwningNode()->NodeGuid : FGuid();
-	
+
 	if (gameFlow->GetEntryStateId() != entryStateId)
 	{
 		gameFlow->Modify();
@@ -99,10 +102,7 @@ void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 // UGameFlowGraphNode_Base
 //------------------------------------------------------
 
-bool UGameFlowGraphNode_Base::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const
-{
-	return Schema->IsA(UGameFlowGraphSchema::StaticClass());
-}
+bool UGameFlowGraphNode_Base::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const { return Schema->IsA(UGameFlowGraphSchema::StaticClass()); }
 
 void UGameFlowGraphNode_Base::GetTransitionList(TArray<UGameFlowGraphNode_Transition*>& OutTransitions) const
 {
@@ -177,17 +177,17 @@ void UGameFlowGraphNode_Transition::AllocateDefaultPins()
 FText UGameFlowGraphNode_Transition::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	FFormatNamedArguments Args;
-	Args.Add(TEXT("PrevState"), GetPreviousState()->GetNodeTitle(ENodeTitleType::EditableTitle));
-	Args.Add(TEXT("NextState"), GetNextState()->GetNodeTitle(ENodeTitleType::EditableTitle));
+	Args.Add(TEXT("PrevNode"), GetPrevNode()->GetNodeTitle(ENodeTitleType::EditableTitle));
+	Args.Add(TEXT("NextNode"), GetNextNode()->GetNodeTitle(ENodeTitleType::EditableTitle));
 
-	return FText::Format(LOCTEXT("UGameFlowGraphNode_Transition_NodeTitle", "{PrevState} to {NextState}"), Args);
+	return FText::Format(LOCTEXT("UGameFlowGraphNode_Transition_NodeTitle", "{PrevNode} to {NextNode}"), Args);
 }
 
 FText UGameFlowGraphNode_Transition::GetTooltipText() const { return LOCTEXT("UGameFlowGraphNode_Transition_TooltipText", "This is a Transition"); }
 
 void UGameFlowGraphNode_Transition::PinConnectionListChanged(UEdGraphPin* Pin)
 {
-	if (Pin->LinkedTo.Num() == 0 && IsValid(this)) // To avoid double destroy
+	if (Pin->LinkedTo.Num() == 0)
 	{
 		GetGraph()->Modify();
 		Modify();
@@ -199,24 +199,14 @@ void UGameFlowGraphNode_Transition::PostPasteNode()
 {
 	Super::PostPasteNode();
 
-	for (UEdGraphPin* Pin : Pins)
+	for (UEdGraphPin* pin : Pins)
 	{
-		if (Pin->LinkedTo.Num() == 0)
+		if (pin && pin->LinkedTo.Num() == 0)
 		{
 			DestroyNode();
 			break;
 		}
 	}
-}
-
-UGameFlowGraphNode_Base* UGameFlowGraphNode_Transition::GetPreviousState() const
-{
-	return Pins[0]->LinkedTo.Num() > 0 ? Cast<UGameFlowGraphNode_Base>(Pins[0]->LinkedTo[0]->GetOwningNode()) : nullptr;
-}
-
-UGameFlowGraphNode_Base* UGameFlowGraphNode_Transition::GetNextState() const
-{
-	return Pins[1]->LinkedTo.Num() > 0 ? Cast<UGameFlowGraphNode_Base>(Pins[1]->LinkedTo[0]->GetOwningNode()) : nullptr;
 }
 
 void UGameFlowGraphNode_Transition::CreateConnections(UGameFlowGraphNode_Base* PreviousState, UGameFlowGraphNode_Base* NextState)
@@ -334,10 +324,7 @@ void SGameFlowGraphNode_Start::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 	OutputPins.Add(PinToAdd);
 }
 
-FText SGameFlowGraphNode_Start::GetPreviewCornerText() const
-{
-	return LOCTEXT("SGameFlowGraphNode_Start_PreviewCornerText", "Entry point for State machine");
-}
+FText SGameFlowGraphNode_Start::GetPreviewCornerText() const { return LOCTEXT("SGameFlowGraphNode_Start_PreviewCornerText", "Entry point for State machine"); }
 
 //------------------------------------------------------
 // SGameFlowGraphNode_State
@@ -367,8 +354,8 @@ FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor_Internal(FLinearC
 {
 	if (OwningGameFlow->IsStateActive(GraphNode->NodeGuid))
 	{
-		return ActiveStateColorBright;
-		////// TODO return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, StateData.Weight);
+		const float angleVelocity = 12;
+		return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, FMath::Sin(GameFlowEditorTime * angleVelocity));
 	}
 
 	return InactiveStateColor;
@@ -514,15 +501,9 @@ FText SGameFlowGraphNode_State::GetPreviewCornerText() const
 	return FText::Format(LOCTEXT("SGameFlowGraphNode_State_PreviewCornerText", "{0} State"), GraphNode->GetNodeTitle(ENodeTitleType::EditableTitle));
 }
 
-FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const
-{
-	return step ? step->GenerateDescription() : LOCTEXT("SGameFlowGraphNode_State_StepDescription_Default", "None");
-}
+FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const { return step ? step->GenerateDescription() : LOCTEXT("SGameFlowGraphNode_State_StepDescription_Default", "None"); }
 
-FMargin SGameFlowGraphNode_State::StepsPadding() const
-{
-	return StepsVerticalBoxPtr->GetVisibility() == EVisibility::Visible ? StepsVerticalBoxPadding : ZeroMargin;
-}
+FMargin SGameFlowGraphNode_State::StepsPadding() const { return StepsVerticalBoxPtr->GetVisibility() == EVisibility::Visible ? StepsVerticalBoxPadding : ZeroMargin; }
 
 EVisibility SGameFlowGraphNode_State::StepsVisibility() const ////// TODO Think if can be done with property changed instead of every tick binding
 {
@@ -565,32 +546,32 @@ void SGameFlowGraphNode_Transition::PerformSecondPassLayout(const TMap< UObject*
 	int32 TransIndex = 0;
 	int32 NumOfTrans = 1;
 
-	UGameFlowGraphNode_Base* PrevState = TransitionGraphNode->GetPreviousState();
-	UGameFlowGraphNode_Base* NextState = TransitionGraphNode->GetNextState();
-	if ((PrevState != NULL) && (NextState != NULL))
+	UGameFlowGraphNode_Base* PrevNode = TransitionGraphNode->GetPrevNode();
+	UGameFlowGraphNode_Base* NextNode = TransitionGraphNode->GetNextNode();
+	if ((PrevNode != NULL) && (NextNode != NULL))
 	{
-		const TSharedRef<SNode>* pPrevNodeWidget = NodeToWidgetLookup.Find(PrevState);
-		const TSharedRef<SNode>* pNextNodeWidget = NodeToWidgetLookup.Find(NextState);
+		const TSharedRef<SNode>* pPrevNodeWidget = NodeToWidgetLookup.Find(PrevNode);
+		const TSharedRef<SNode>* pNextNodeWidget = NodeToWidgetLookup.Find(NextNode);
 		if ((pPrevNodeWidget != NULL) && (pNextNodeWidget != NULL))
 		{
 			const TSharedRef<SNode>& PrevNodeWidget = *pPrevNodeWidget;
 			const TSharedRef<SNode>& NextNodeWidget = *pNextNodeWidget;
 
-			StartGeom = FGeometry(FVector2D(PrevState->NodePosX, PrevState->NodePosY), FVector2D::ZeroVector, PrevNodeWidget->GetDesiredSize(), 1.0f);
-			EndGeom = FGeometry(FVector2D(NextState->NodePosX, NextState->NodePosY), FVector2D::ZeroVector, NextNodeWidget->GetDesiredSize(), 1.0f);
+			StartGeom = FGeometry(FVector2D(PrevNode->NodePosX, PrevNode->NodePosY), FVector2D::ZeroVector, PrevNodeWidget->GetDesiredSize(), 1.0f);
+			EndGeom = FGeometry(FVector2D(NextNode->NodePosX, NextNode->NodePosY), FVector2D::ZeroVector, NextNodeWidget->GetDesiredSize(), 1.0f);
 
 			TArray<UGameFlowGraphNode_Transition*> Transitions;
-			PrevState->GetTransitionList(Transitions);
+			PrevNode->GetTransitionList(Transitions);
 
-			Transitions = Transitions.FilterByPredicate([NextState](const UGameFlowGraphNode_Transition* InTransition) -> bool
+			Transitions = Transitions.FilterByPredicate([NextNode](const UGameFlowGraphNode_Transition* InTransition) -> bool
 				{
-					return InTransition->GetNextState() == NextState;
+					return InTransition->GetNextNode() == NextNode;
 				});
 
 			TransIndex = Transitions.IndexOfByKey(TransitionGraphNode);
 			NumOfTrans = Transitions.Num();
 
-			PrevStateNodeWidgetPtr = PrevNodeWidget;
+			PrevNodeWidgetPtr = PrevNodeWidget;
 		}
 	}
 
@@ -623,14 +604,14 @@ void SGameFlowGraphNode_Transition::UpdateGraphNode()
 
 FText SGameFlowGraphNode_Transition::GetPreviewCornerText(bool bReverse) const
 {
-	UGameFlowGraphNode_Base* PrevState = (bReverse ? TransitionGraphNode->GetNextState() : TransitionGraphNode->GetPreviousState());
-	UGameFlowGraphNode_Base* NextState = (bReverse ? TransitionGraphNode->GetPreviousState() : TransitionGraphNode->GetNextState());
+	UGameFlowGraphNode_Base* PrevNode = (bReverse ? TransitionGraphNode->GetNextNode() : TransitionGraphNode->GetPrevNode());
+	UGameFlowGraphNode_Base* NextNode = (bReverse ? TransitionGraphNode->GetPrevNode() : TransitionGraphNode->GetNextNode());
 
 	FText Result = LOCTEXT("SGameFlowGraphNode_Transition_BadTransition", "Bad transition (missing source or target)");
 
-	if (PrevState != NULL && NextState != NULL)
+	if (PrevNode != NULL && NextNode != NULL)
 	{
-		Result = FText::Format(LOCTEXT("SGameFlowGraphNode_Transition_TransitionXToY", "{0} to {1}"), PrevState->GetNodeTitle(ENodeTitleType::EditableTitle), NextState->GetNodeTitle(ENodeTitleType::EditableTitle));
+		Result = FText::Format(LOCTEXT("SGameFlowGraphNode_Transition_TransitionXToY", "{0} to {1}"), PrevNode->GetNodeTitle(ENodeTitleType::EditableTitle), NextNode->GetNodeTitle(ENodeTitleType::EditableTitle));
 	}
 
 	return Result;
@@ -647,13 +628,13 @@ FLinearColor SGameFlowGraphNode_Transition::StaticGetTransitionColor(UGameFlowGr
 
 FSlateColor SGameFlowGraphNode_Transition::GetTransitionColor() const
 {
-	return StaticGetTransitionColor(TransitionGraphNode, (IsHovered() || (PrevStateNodeWidgetPtr.IsValid() && PrevStateNodeWidgetPtr.Pin()->IsHovered())));
+	return StaticGetTransitionColor(TransitionGraphNode, (IsHovered() || (PrevNodeWidgetPtr.IsValid() && PrevNodeWidgetPtr.Pin()->IsHovered())));
 }
 
 FText SGameFlowGraphNode_Transition::GetTransitionKey() const
 {
-	const UGameFlowGraphNode_Base* prevNode = TransitionGraphNode->GetPreviousState();
-	const UGameFlowGraphNode_Base* nextNode = TransitionGraphNode->GetNextState();
+	const UGameFlowGraphNode_Base* prevNode = TransitionGraphNode->GetPrevNode();
+	const UGameFlowGraphNode_Base* nextNode = TransitionGraphNode->GetNextNode();
 
 	if (prevNode && nextNode)
 	{
@@ -809,12 +790,12 @@ void FGameFlowGraphConnectionDrawingPolicy::DetermineLinkGeometry(
 	}
 	else if (UGameFlowGraphNode_Transition* TransNode = Cast<UGameFlowGraphNode_Transition>(InputPin->GetOwningNode()))
 	{
-		UGameFlowGraphNode_Base* PrevState = TransNode->GetPreviousState();
-		UGameFlowGraphNode_Base* NextState = TransNode->GetNextState();
-		if ((PrevState != NULL) && (NextState != NULL))
+		UGameFlowGraphNode_Base* PrevNode = TransNode->GetPrevNode();
+		UGameFlowGraphNode_Base* NextNode = TransNode->GetNextNode();
+		if ((PrevNode != NULL) && (NextNode != NULL))
 		{
-			int32* PrevNodeIndex = NodeWidgetMap.Find(PrevState);
-			int32* NextNodeIndex = NodeWidgetMap.Find(NextState);
+			int32* PrevNodeIndex = NodeWidgetMap.Find(PrevNode);
+			int32* NextNodeIndex = NodeWidgetMap.Find(NextNode);
 			if ((PrevNodeIndex != NULL) && (NextNodeIndex != NULL))
 			{
 				StartWidgetGeometry = &(ArrangedNodes[*PrevNodeIndex]);
@@ -1309,10 +1290,7 @@ void UGameFlowGraphSchema::BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPi
 	Super::BreakSinglePinLink(SourcePin, TargetPin);
 }
 
-TSharedPtr<FEdGraphSchemaAction> UGameFlowGraphSchema::GetCreateCommentAction() const
-{
-	return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FGameFlowGraphSchemaAction_NewComment));
-}
+TSharedPtr<FEdGraphSchemaAction> UGameFlowGraphSchema::GetCreateCommentAction() const { return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FGameFlowGraphSchemaAction_NewComment)); }
 
 //------------------------------------------------------
 // UFactory_GameFlow
@@ -1376,7 +1354,7 @@ uint32 UFactory_GameFlowTransitionKey::GetMenuCategories() const { return EAsset
 // FGameFlowEditor
 //------------------------------------------------------
 
-class FGameFlowEditor : public FEditorUndoClient, public FAssetEditorToolkit
+class FGameFlowEditor : public FEditorUndoClient, public FAssetEditorToolkit, public FTickableEditorObject
 {
 public:
 
@@ -1404,6 +1382,10 @@ public:
 	virtual FName GetToolkitFName() const override { return FName("GameFlowEditor"); }
 	virtual FText GetBaseToolkitName() const override { return LOCTEXT("FGameFlowEditor_BaseToolkitName", "Game Flow Editor"); }
 	virtual FString GetWorldCentricTabPrefix() const override { return "GameFlowEditor"; }
+
+	virtual void Tick(float DeltaTime) override { GameFlowEditorTime += DeltaTime; }
+	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(FGameFlowEditor, STATGROUP_Tickables); }
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
 
 protected:
 
@@ -1492,6 +1474,8 @@ const FName FGameFlowEditor::GraphTabId(TEXT("FGameFlowEditor_GraphTab_Id"));
 
 void FGameFlowEditor::InitGameFlowEditor(const EToolkitMode::Type Mode, const TSharedPtr< class IToolkitHost >& InitToolkitHost, UGameFlow* gameFlow)
 {
+	GameFlowEditorTime = 0;
+
 	check(gameFlow != NULL);
 
 	GameFlow = gameFlow;
@@ -1667,8 +1651,8 @@ void FGameFlowEditor::OnSelectionChanged(const TSet<UObject*>& selectedNodes)
 		}
 		else if (const UGameFlowGraphNode_Transition* transitionNode = Cast<UGameFlowGraphNode_Transition>(*selectedNodes.begin()))
 		{
-			const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
-			const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
+			const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPrevNode();
+			const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextNode();
 
 			if (prevNode && nextNode)
 			{
@@ -1783,7 +1767,7 @@ void FGameFlowEditor::DeleteSelectedNodes()
 			{
 				const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
 
-				StoreSelectedNodes();
+				StoreSelectedNodes(PrevSelectedNodes);
 
 				UEdGraph* graph = graphEditor->GetCurrentGraph();
 				graph->Modify();
@@ -1799,8 +1783,8 @@ void FGameFlowEditor::DeleteSelectedNodes()
 
 				for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
 				{
-					const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
-					const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
+					const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPrevNode();
+					const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextNode();
 					GameFlow->DestroyTransition(prevNode->NodeGuid, nextNode->NodeGuid);
 
 					graph->GetSchema()->BreakPinLinks(*transitionNode->Pins[0], false);
@@ -1870,7 +1854,7 @@ void FGameFlowEditor::PasteNodes()
 			// Undo/Redo support
 			const FScopedTransaction Transaction(FGenericCommands::Get().Paste->GetDescription());
 
-			StoreSelectedNodes();
+			StoreSelectedNodes(PrevSelectedNodes);
 
 			EdGraph->Modify();
 
@@ -1953,7 +1937,7 @@ void FGameFlowEditor::PasteNodes()
 
 						for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
 						{
-							if (transitionNode->GetPreviousState()->NodeGuid == transitionRemappingEntry.Key && transitionNode->GetNextState()->NodeGuid == transitionEntry.Key)
+							if (transitionNode->GetPrevNode()->NodeGuid == transitionRemappingEntry.Key && transitionNode->GetNextNode()->NodeGuid == transitionEntry.Key)
 							{
 								shouldBeAdded = true;
 								break;
@@ -2084,7 +2068,7 @@ void FGameFlowEditor::ApplySelectedNodes(const TSet<FGuid>& selectedNodes)
 			{
 				for (const FGuid selectedNode : selectedNodes)
 				{
-					if (TObjectPtr<UEdGraphNode>* node = graphEditor->GetCurrentGraph()->Nodes.FindByPredicate([selectedNode](const UEdGraphNode* node) { node->NodeGuid == selectedNode; }))
+					if (TObjectPtr<UEdGraphNode>* node = graphEditor->GetCurrentGraph()->Nodes.FindByPredicate([selectedNode](const UEdGraphNode* node) { return node->NodeGuid == selectedNode; }))
 					{
 						graphEditor->SetNodeSelection(node->Get(), true);
 					}
