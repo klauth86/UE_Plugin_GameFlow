@@ -1,16 +1,11 @@
 // Copyright 2023 Pentangle Studio under EULA https://www.unrealengine.com/en-US/eula/unreal
 
 #include "GameFlowCoreEditor.h"
-#include "Graph/GameFlowGraph.h"
-#include "Graph/GameFlowGraphSchema.h"
-#include "Graph/GameFlowGraphFactory.h"
-#include "Graph/GameFlowGraphNode.h"
-#include "UObject/ObjectSaveContext.h"
+#include "GameFlowCoreEditor_private.h"
 #include "EdGraphNode_Comment.h"
 
-#include "AssetTypeActions.h"
-#include "Factories.h"
 #include "AssetTypeCategories.h"
+#include "AssetTypeActions_Base.h"
 #include "GameFlow.h"
 
 #include "EditorUndoClient.h"
@@ -260,6 +255,26 @@ void SGameFlowGraphNodeOutputPin::Construct(const FArguments& InArgs, UEdGraphPi
 // SGameFlowGraphNode_Start
 //------------------------------------------------------
 
+class SGameFlowGraphNode_Start : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_Start) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Start* InNode);
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
+
+	// End of SGraphNode interface
+
+protected:
+	FSlateColor GetBorderBackgroundColor() const;
+
+	FText GetPreviewCornerText() const;
+};
+
 void SGameFlowGraphNode_Start::Construct(const FArguments& InArgs, UGameFlowGraphNode_Start* InNode)
 {
 	this->SetCursor(EMouseCursor::CardinalCross);
@@ -329,6 +344,42 @@ FText SGameFlowGraphNode_Start::GetPreviewCornerText() const { return LOCTEXT("S
 //------------------------------------------------------
 // SGameFlowGraphNode_State
 //------------------------------------------------------
+
+class SGameFlowGraphNode_State : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_State) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Base* InNode);
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	virtual void CreatePinWidgets() override;
+	virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
+	// End of SGraphNode interface
+
+	// SWidget interface
+	void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	// End of SWidget interface
+
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+
+protected:
+	FSlateColor GetBorderBackgroundColor() const;
+	virtual FSlateColor GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const;
+
+	virtual FText GetPreviewCornerText() const;
+
+	FText GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const;
+	FMargin StepsPadding() const;
+	EVisibility StepsVisibility() const;
+
+	TSharedPtr<SVerticalBox> StepsVerticalBoxPtr;
+
+	UGameFlow* OwningGameFlow;
+};
 
 void SGameFlowGraphNode_State::Construct(const FArguments& InArgs, UGameFlowGraphNode_Base* InNode)
 {
@@ -541,6 +592,49 @@ EVisibility SGameFlowGraphNode_State::StepsVisibility() const ////// TODO Think 
 // SGameFlowGraphNode_Transition
 //------------------------------------------------------
 
+class SGameFlowGraphNode_Transition : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_Transition) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Transition* InNode);
+
+	// SNodePanel::SNode interface
+	virtual void MoveTo(const FVector2D& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty = true) override {} // Ignored; position is set by the location of the attached state nodes
+	virtual bool RequiresSecondPassLayout() const override { return true; }
+	virtual void PerformSecondPassLayout(const TMap< UObject*, TSharedRef<SNode> >& NodeToWidgetLookup) const override;
+	// End of SNodePanel::SNode interface
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	// End of SGraphNode interface
+
+	// SWidget interface
+	void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	// End of SWidget interface
+
+	// Calculate position for multiple nodes to be placed between a start and end point, by providing this nodes index and max expected nodes 
+	void PositionBetweenTwoNodesWithOffset(const FGeometry& StartGeom, const FGeometry& EndGeom, int32 NodeIndex, int32 MaxNodes) const;
+
+	static FLinearColor StaticGetTransitionColor(UGameFlowGraphNode_Transition* TransNode, bool bIsHovered);
+private:
+	TSharedPtr<STextEntryPopup> TextEntryWidget;
+
+	/** Cache of the widget representing the previous state node */
+	mutable TWeakPtr<SNode> PrevNodeWidgetPtr;
+
+	UGameFlow* OwningGameFlow;
+
+	UGameFlowGraphNode_Transition* TransitionGraphNode;
+
+private:
+	FText GetPreviewCornerText(bool reverse) const;
+	FSlateColor GetTransitionColor() const;
+	FText GetTransitionKey() const;
+};
+
 void SGameFlowGraphNode_Transition::Construct(const FArguments& InArgs, UGameFlowGraphNode_Transition* InNode)
 {
 	OwningGameFlow = InNode->GetGraph()->GetTypedOuter<UGameFlow>();
@@ -728,7 +822,7 @@ void SGameFlowGraphNode_Transition::PositionBetweenTwoNodesWithOffset(const FGeo
 }
 
 //------------------------------------------------------
-// FGameFlowGraphNodeFactory
+// FGameFlowGraphConnectionDrawingPolicy
 //------------------------------------------------------
 
 class FGameFlowGraphConnectionDrawingPolicy : public FConnectionDrawingPolicy
@@ -923,6 +1017,11 @@ FVector2D FGameFlowGraphConnectionDrawingPolicy::ComputeSplineTangent(const FVec
 // FGameFlowGraphNodeFactory
 //------------------------------------------------------
 
+struct FGameFlowGraphNodeFactory : public FGraphPanelNodeFactory
+{
+	virtual TSharedPtr<SGraphNode> CreateNode(UEdGraphNode* InNode) const override;
+};
+
 TSharedPtr<class SGraphNode> FGameFlowGraphNodeFactory::CreateNode(class UEdGraphNode* InNode) const
 {
 	if (UGameFlowGraphNode_State* StateNode = Cast<UGameFlowGraphNode_State>(InNode))
@@ -945,6 +1044,12 @@ TSharedPtr<class SGraphNode> FGameFlowGraphNodeFactory::CreateNode(class UEdGrap
 // FGameFlowGraphPinFactory
 //------------------------------------------------------
 
+struct FGameFlowGraphPinFactory : public FGraphPanelPinFactory
+{
+public:
+	virtual TSharedPtr<class SGraphPin> CreatePin(class UEdGraphPin* Pin) const override;
+};
+
 TSharedPtr<class SGraphPin> FGameFlowGraphPinFactory::CreatePin(class UEdGraphPin* InPin) const
 {
 	if (InPin->GetSchema()->IsA<UGameFlowGraphSchema>() && InPin->PinType.PinCategory == UGameFlowGraphSchema::PC_Exec)
@@ -958,6 +1063,12 @@ TSharedPtr<class SGraphPin> FGameFlowGraphPinFactory::CreatePin(class UEdGraphPi
 //------------------------------------------------------
 // FGameFlowGraphPinConnectionFactory
 //------------------------------------------------------
+
+struct FGameFlowGraphPinConnectionFactory : public FGraphPanelPinConnectionFactory
+{
+public:
+	virtual FConnectionDrawingPolicy* CreateConnectionPolicy(const UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const class FSlateRect& InClippingRect, class FSlateWindowElementList& InDrawElements, UEdGraph* InGraphObj) const override;
+};
 
 class FConnectionDrawingPolicy* FGameFlowGraphPinConnectionFactory::CreateConnectionPolicy(const class UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const class FSlateRect& InClippingRect, class FSlateWindowElementList& InDrawElements, class UEdGraph* InGraphObj) const
 {
@@ -2097,6 +2208,16 @@ void FGameFlowEditor::ApplySelectedNodes(const TSet<FGuid>& selectedNodes)
 // FAssetTypeActions_GameFlow
 //------------------------------------------------------
 
+class FAssetTypeActions_GameFlow : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual void OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor) override;
+	virtual uint32 GetCategories() override;
+};
+
 FText FAssetTypeActions_GameFlow::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlow_Name", "Game Flow"); }
 
 UClass* FAssetTypeActions_GameFlow::GetSupportedClass() const { return UGameFlow::StaticClass(); }
@@ -2112,6 +2233,15 @@ uint32 FAssetTypeActions_GameFlow::GetCategories() { return EAssetTypeCategories
 // FAssetTypeActions_GameFlowContext
 //------------------------------------------------------
 
+class FAssetTypeActions_GameFlowContext : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual uint32 GetCategories() override;
+};
+
 FText FAssetTypeActions_GameFlowContext::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlowContext_Name", "Game Flow Context (Map based)"); }
 
 UClass* FAssetTypeActions_GameFlowContext::GetSupportedClass() const { return UGameFlowContext_MapBased::StaticClass(); }
@@ -2121,6 +2251,15 @@ uint32 FAssetTypeActions_GameFlowContext::GetCategories() { return EAssetTypeCat
 //------------------------------------------------------
 // FAssetTypeActions_GameFlowTransitionKey
 //------------------------------------------------------
+
+class FAssetTypeActions_GameFlowTransitionKey : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual uint32 GetCategories() override;
+};
 
 FText FAssetTypeActions_GameFlowTransitionKey::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlowTransitionKey_Name", "Game Flow Transition Key"); }
 
