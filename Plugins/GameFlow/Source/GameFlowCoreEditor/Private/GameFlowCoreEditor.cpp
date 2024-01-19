@@ -1,16 +1,11 @@
 // Copyright 2023 Pentangle Studio under EULA https://www.unrealengine.com/en-US/eula/unreal
 
 #include "GameFlowCoreEditor.h"
-#include "Graph/GameFlowGraph.h"
-#include "Graph/GameFlowGraphSchema.h"
-#include "Graph/GameFlowGraphFactory.h"
-#include "Graph/GameFlowGraphNode.h"
-#include "UObject/ObjectSaveContext.h"
+#include "GameFlowCoreEditor_private.h"
 #include "EdGraphNode_Comment.h"
 
-#include "AssetTypeActions.h"
-#include "Factories.h"
 #include "AssetTypeCategories.h"
+#include "AssetTypeActions_Base.h"
 #include "GameFlow.h"
 
 #include "EditorUndoClient.h"
@@ -42,6 +37,8 @@ TSharedPtr<T> AddNewActionAs(FGraphContextMenuBuilder& ContextMenuBuilder, const
 	return Action;
 }
 
+float GameFlowEditorTime = 0;
+
 //------------------------------------------------------
 // UGameFlowGraphNode_Start
 //------------------------------------------------------
@@ -51,16 +48,9 @@ void UGameFlowGraphNode_Start::AllocateDefaultPins()
 	UEdGraphPin* Outputs = CreatePin(EGPD_Output, UGameFlowGraphSchema::PC_Exec, TEXT("Entry"));
 }
 
-FText UGameFlowGraphNode_Start::GetNodeTitle(ENodeTitleType::Type TitleType) const
-{
-	UEdGraph* Graph = GetGraph();
-	return FText::FromString(Graph->GetName());
-}
+FText UGameFlowGraphNode_Start::GetNodeTitle(ENodeTitleType::Type TitleType) const { return FText::FromString(GetGraph()->GetName()); }
 
-FText UGameFlowGraphNode_Start::GetTooltipText() const
-{
-	return LOCTEXT("UGameFlowGraphNode_Start_TooltipText", "Entry point for State machine");
-}
+FText UGameFlowGraphNode_Start::GetTooltipText() const { return LOCTEXT("UGameFlowGraphNode_Start_TooltipText", "Entry point for State machine"); }
 
 void UGameFlowGraphNode_Start::PinConnectionListChanged(UEdGraphPin* Pin)
 {
@@ -81,7 +71,7 @@ UEdGraphNode* UGameFlowGraphNode_Start::GetOutputNode() const
 	if (Pins.Num() > 0 && Pins[0] != NULL)
 	{
 		check(Pins[0]->LinkedTo.Num() <= 1);
-		if (Pins[0]->LinkedTo.Num() > 0 && Pins[0]->LinkedTo[0]->GetOwningNode() != NULL)
+		if (Pins[0]->LinkedTo.Num() == 1 && Pins[0]->LinkedTo[0] != NULL)
 		{
 			return Pins[0]->LinkedTo[0]->GetOwningNode();
 		}
@@ -91,16 +81,15 @@ UEdGraphNode* UGameFlowGraphNode_Start::GetOutputNode() const
 
 void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 {
-	if (UGameFlow* gameFlow = GetGraph()->GetTypedOuter<UGameFlow>())
+	const UEdGraphNode* outputNode = GetOutputNode();
+	const FGuid entryStateId = outputNode ? outputNode->NodeGuid : FGuid();
+	
+	UGameFlow* gameFlow = GetGraph()->GetTypedOuter<UGameFlow>();
+
+	if (gameFlow->GetEntryStateId() != entryStateId)
 	{
-		if (Pins[0]->LinkedTo.Num() == 1)
-		{
-			gameFlow->SetEntryState(Pins[0]->LinkedTo[0]->GetOwningNode()->NodeGuid);
-		}
-		else
-		{
-			gameFlow->SetEntryState(FGuid());
-		}
+		gameFlow->Modify();
+		gameFlow->SetEntryStateId(entryStateId);
 	}
 }
 
@@ -108,18 +97,13 @@ void UGameFlowGraphNode_Start::RefreshOwningAssetEntryState()
 // UGameFlowGraphNode_Base
 //------------------------------------------------------
 
-bool UGameFlowGraphNode_Base::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const
-{
-	return Schema->IsA(UGameFlowGraphSchema::StaticClass());
-}
+bool UGameFlowGraphNode_Base::CanCreateUnderSpecifiedSchema(const UEdGraphSchema* Schema) const { return Schema->IsA(UGameFlowGraphSchema::StaticClass()); }
 
 void UGameFlowGraphNode_Base::GetTransitionList(TArray<UGameFlowGraphNode_Transition*>& OutTransitions) const
 {
-	// Normal transitions
-	for (int32 LinkIndex = 0; LinkIndex < Pins[1]->LinkedTo.Num(); ++LinkIndex)
+	for (UEdGraphPin* linkedPin : Pins[1]->LinkedTo)
 	{
-		UEdGraphNode* TargetNode = Pins[1]->LinkedTo[LinkIndex]->GetOwningNode();
-		if (UGameFlowGraphNode_Transition* Transition = Cast<UGameFlowGraphNode_Transition>(TargetNode))
+		if (UGameFlowGraphNode_Transition* Transition = Cast<UGameFlowGraphNode_Transition>(linkedPin->GetOwningNode()))
 		{
 			OutTransitions.Add(Transition);
 		}
@@ -130,7 +114,7 @@ void UGameFlowGraphNode_Base::GetTransitionList(TArray<UGameFlowGraphNode_Transi
 // UGameFlowGraphNode_State
 //------------------------------------------------------
 
-UGameFlowGraphNode_State::UGameFlowGraphNode_State(const FObjectInitializer& ObjectInitializer)	: Super(ObjectInitializer)
+UGameFlowGraphNode_State::UGameFlowGraphNode_State(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	bCanRenameNode = true;
 }
@@ -145,7 +129,6 @@ void UGameFlowGraphNode_State::AutowireNewNode(UEdGraphPin* FromPin)
 {
 	Super::AutowireNewNode(FromPin);
 
-	//@TODO: If the FromPin is a state, create a transition between us
 	if (FromPin)
 	{
 		if (GetSchema()->TryCreateConnection(FromPin, GetInputPin()))
@@ -166,25 +149,11 @@ void UGameFlowGraphNode_State::OnRenameNode(const FString& NewName)
 {
 	CachedNodeTitle = FText::FromString(NewName);
 
-	if (const UGameFlow* gameFlow = GetGraph()->GetTypedOuter<UGameFlow>())
+	const TMap<FGuid, TObjectPtr<UGameFlowState>>& states = GetGraph()->GetTypedOuter<UGameFlow>()->GetStates();
+
+	if (states.Contains(NodeGuid))
 	{
-		const TMap<FGuid, TObjectPtr<UGameFlowState>>& states = gameFlow->GetStates();
-
-		if (states.Contains(NodeGuid))
-		{
-			states[NodeGuid]->StateTitle = FName(NewName);
-		}
-	}
-}
-
-void UGameFlowGraphNode_State::DestroyNode()
-{
-	Super::DestroyNode();
-
-	if (UGameFlow* gameFlow = GetGraph()->GetTypedOuter<UGameFlow>())
-	{
-		gameFlow->Modify();
-		gameFlow->DestroyState(NodeGuid);
+		states[NodeGuid]->StateTitle = FName(NewName);
 	}
 }
 
@@ -202,34 +171,21 @@ void UGameFlowGraphNode_Transition::AllocateDefaultPins()
 
 FText UGameFlowGraphNode_Transition::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
-	UGameFlowGraphNode_Base* PrevState = GetPreviousState();
-	UGameFlowGraphNode_Base* NextState = GetNextState();
-
 	FFormatNamedArguments Args;
-	Args.Add(TEXT("PrevState"), PrevState->GetNodeTitle(ENodeTitleType::EditableTitle));
-	Args.Add(TEXT("NextState"), NextState->GetNodeTitle(ENodeTitleType::EditableTitle));
+	Args.Add(TEXT("PrevNode"), GetPrevNode()->GetNodeTitle(ENodeTitleType::EditableTitle));
+	Args.Add(TEXT("NextNode"), GetNextNode()->GetNodeTitle(ENodeTitleType::EditableTitle));
 
-	return FText::Format(LOCTEXT("UGameFlowGraphNode_Transition_NodeTitle", "{PrevState} to {NextState}"), Args);
+	return FText::Format(LOCTEXT("UGameFlowGraphNode_Transition_NodeTitle", "{PrevNode} to {NextNode}"), Args);
 }
 
-FText UGameFlowGraphNode_Transition::GetTooltipText() const
-{
-	return LOCTEXT("UGameFlowGraphNode_Transition_TooltipText", "This is a Transition");
-}
+FText UGameFlowGraphNode_Transition::GetTooltipText() const { return LOCTEXT("UGameFlowGraphNode_Transition_TooltipText", "This is a Transition"); }
 
 void UGameFlowGraphNode_Transition::PinConnectionListChanged(UEdGraphPin* Pin)
 {
 	if (Pin->LinkedTo.Num() == 0)
 	{
-		// Commit suicide; transitions must always have an input and output connection
+		GetGraph()->Modify();
 		Modify();
-
-		// Our parent graph will have our graph in SubGraphs so needs to be modified to record that.
-		if (UEdGraph* ParentGraph = GetGraph())
-		{
-			ParentGraph->Modify();
-		}
-
 		DestroyNode();
 	}
 }
@@ -238,11 +194,9 @@ void UGameFlowGraphNode_Transition::PostPasteNode()
 {
 	Super::PostPasteNode();
 
-	// We don't want to paste nodes in that aren't fully linked (transition nodes have fixed pins as they
-	// really describe the connection between two other nodes). If we find one missing link, get rid of the node.
-	for (UEdGraphPin* Pin : Pins)
+	for (UEdGraphPin* pin : Pins)
 	{
-		if (Pin->LinkedTo.Num() == 0)
+		if (pin && pin->LinkedTo.Num() == 0)
 		{
 			DestroyNode();
 			break;
@@ -250,43 +204,15 @@ void UGameFlowGraphNode_Transition::PostPasteNode()
 	}
 }
 
-UGameFlowGraphNode_Base* UGameFlowGraphNode_Transition::GetPreviousState() const
-{
-	if (Pins[0]->LinkedTo.Num() > 0)
-	{
-		return Cast<UGameFlowGraphNode_Base>(Pins[0]->LinkedTo[0]->GetOwningNode());
-	}
-	else
-	{
-		return NULL;
-	}
-}
-
-UGameFlowGraphNode_Base* UGameFlowGraphNode_Transition::GetNextState() const
-{
-	if (Pins[1]->LinkedTo.Num() > 0)
-	{
-		return Cast<UGameFlowGraphNode_Base>(Pins[1]->LinkedTo[0]->GetOwningNode());
-	}
-	else
-	{
-		return NULL;
-	}
-}
-
 void UGameFlowGraphNode_Transition::CreateConnections(UGameFlowGraphNode_Base* PreviousState, UGameFlowGraphNode_Base* NextState)
 {
-	// Previous to this
 	Pins[0]->Modify();
 	Pins[0]->LinkedTo.Empty();
-
 	PreviousState->GetOutputPin()->Modify();
 	Pins[0]->MakeLinkTo(PreviousState->GetOutputPin());
 
-	// This to next
 	Pins[1]->Modify();
 	Pins[1]->LinkedTo.Empty();
-
 	NextState->GetInputPin()->Modify();
 	Pins[1]->MakeLinkTo(NextState->GetInputPin());
 }
@@ -302,12 +228,10 @@ public:
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, UEdGraphPin* InPin);
-protected:
-	// Begin SGraphPin interface
-	virtual TSharedRef<SWidget>	GetDefaultValueWidget() override;
-	// End SGraphPin interface
 
-	const FSlateBrush* GetPinBorder() const;
+protected:
+	virtual TSharedRef<SWidget>	GetDefaultValueWidget() override { return SNew(STextBlock); }
+	const FSlateBrush* GetPinBorder() const { return FAppStyle::GetBrush(IsHovered() ? TEXT("Graph.StateNode.Pin.BackgroundHovered") : TEXT("Graph.StateNode.Pin.Background")); }
 };
 
 void SGameFlowGraphNodeOutputPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
@@ -319,10 +243,6 @@ void SGameFlowGraphNodeOutputPin::Construct(const FArguments& InArgs, UEdGraphPi
 	GraphPinObj = InPin;
 	check(GraphPinObj != NULL);
 
-	const UEdGraphSchema* Schema = GraphPinObj->GetSchema();
-	check(Schema);
-
-	// Set up a hover for pins that is tinted the color of the pin.
 	SBorder::Construct(SBorder::FArguments()
 		.BorderImage(this, &SGameFlowGraphNodeOutputPin::GetPinBorder)
 		.BorderBackgroundColor(this, &SGameFlowGraphNodeOutputPin::GetPinColor)
@@ -331,27 +251,35 @@ void SGameFlowGraphNodeOutputPin::Construct(const FArguments& InArgs, UEdGraphPi
 	);
 }
 
-TSharedRef<SWidget>	SGameFlowGraphNodeOutputPin::GetDefaultValueWidget()
-{
-	return SNew(STextBlock);
-}
-
-const FSlateBrush* SGameFlowGraphNodeOutputPin::GetPinBorder() const
-{
-	return (IsHovered())
-		? FAppStyle::GetBrush(TEXT("Graph.StateNode.Pin.BackgroundHovered"))
-		: FAppStyle::GetBrush(TEXT("Graph.StateNode.Pin.Background"));
-}
-
 //------------------------------------------------------
 // SGameFlowGraphNode_Start
 //------------------------------------------------------
 
+class SGameFlowGraphNode_Start : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_Start) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Start* InNode);
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
+
+	// End of SGraphNode interface
+
+protected:
+	FSlateColor GetBorderBackgroundColor() const;
+
+	FText GetPreviewCornerText() const;
+};
+
 void SGameFlowGraphNode_Start::Construct(const FArguments& InArgs, UGameFlowGraphNode_Start* InNode)
 {
-	this->GraphNode = InNode;
-
 	this->SetCursor(EMouseCursor::CardinalCross);
+
+	this->GraphNode = InNode;
 
 	this->UpdateGraphNode();
 }
@@ -370,10 +298,8 @@ void SGameFlowGraphNode_Start::UpdateGraphNode()
 	InputPins.Empty();
 	OutputPins.Empty();
 
-	// Reset variables that are going to be exposed, in case we are refreshing an already setup node.
 	RightNodeBox.Reset();
 	LeftNodeBox.Reset();
-
 
 	FLinearColor TitleShadowColor(0.6f, 0.6f, 0.6f);
 
@@ -389,7 +315,6 @@ void SGameFlowGraphNode_Start::UpdateGraphNode()
 				[
 					SNew(SOverlay)
 
-						// PIN AREA
 						+ SOverlay::Slot()
 						.HAlign(HAlign_Fill)
 						.VAlign(VAlign_Fill)
@@ -406,97 +331,65 @@ void SGameFlowGraphNode_Start::UpdateGraphNode()
 void SGameFlowGraphNode_Start::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 {
 	PinToAdd->SetOwner(SharedThis(this));
+
 	RightNodeBox->AddSlot()
 		.HAlign(HAlign_Fill)
 		.VAlign(VAlign_Fill)
-		.FillHeight(1.0f)
-		[
-			PinToAdd
-		];
+		.FillHeight(1.0f)[PinToAdd];
 	OutputPins.Add(PinToAdd);
 }
 
-FText SGameFlowGraphNode_Start::GetPreviewCornerText() const
-{
-	return LOCTEXT("SGameFlowGraphNode_Start_PreviewCornerText", "Entry point for State machine");
-}
+FText SGameFlowGraphNode_Start::GetPreviewCornerText() const { return LOCTEXT("SGameFlowGraphNode_Start_PreviewCornerText", "Entry point for State machine"); }
 
 //------------------------------------------------------
 // SGameFlowGraphNode_State
 //------------------------------------------------------
 
+class SGameFlowGraphNode_State : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_State) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Base* InNode);
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	virtual void CreatePinWidgets() override;
+	virtual void AddPin(const TSharedRef<SGraphPin>& PinToAdd) override;
+	// End of SGraphNode interface
+
+	// SWidget interface
+	void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	// End of SWidget interface
+
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+
+protected:
+	FSlateColor GetBorderBackgroundColor() const;
+	virtual FSlateColor GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const;
+
+	virtual FText GetPreviewCornerText() const;
+
+	FText GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const;
+	FMargin StepsPadding() const;
+	EVisibility StepsVisibility() const;
+
+	TSharedPtr<SVerticalBox> StepsVerticalBoxPtr;
+
+	UGameFlow* OwningGameFlow;
+};
+
 void SGameFlowGraphNode_State::Construct(const FArguments& InArgs, UGameFlowGraphNode_Base* InNode)
 {
 	OwningGameFlow = InNode->GetGraph()->GetTypedOuter<UGameFlow>();
 
-	this->GraphNode = InNode;
-
 	this->SetCursor(EMouseCursor::CardinalCross);
 
+	this->GraphNode = InNode;
+
 	this->UpdateGraphNode();
-}
-
-FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor() const
-{
-	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
-	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
-	FLinearColor ActiveStateColorBright(1.f, 0.6f, 0.35f);
-
-	return GetBorderBackgroundColor_Internal(InactiveStateColor, ActiveStateColorDim, ActiveStateColorBright);
-}
-
-FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const
-{
-	if (UGameFlow* owningGameFlow = OwningGameFlow.Get())
-	{
-		if (owningGameFlow->IsStateActive(GraphNode->NodeGuid))
-		{
-			return ActiveStateColorBright;
-			////// TODO return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, StateData.Weight);
-		}
-	}
-
-	return InactiveStateColor;
-}
-
-void SGameFlowGraphNode_State::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	// Add pins to the hover set so outgoing transitions arrows remains highlighted while the mouse is over the state node
-	if (const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode))
-	{
-		if (const UEdGraphPin* OutputPin = BaseNode->GetOutputPin())
-		{
-			TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
-			check(OwnerPanel.IsValid());
-
-			for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
-			{
-				OwnerPanel->AddPinToHoverSet(OutputPin->LinkedTo[LinkIndex]);
-			}
-		}
-	}
-
-	SGraphNode::OnMouseEnter(MyGeometry, MouseEvent);
-}
-
-void SGameFlowGraphNode_State::OnMouseLeave(const FPointerEvent& MouseEvent)
-{
-	// Remove manually added pins from the hover set
-	if (const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode))
-	{
-		if (const UEdGraphPin* OutputPin = BaseNode->GetOutputPin())
-		{
-			TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
-			check(OwnerPanel.IsValid());
-
-			for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
-			{
-				OwnerPanel->RemovePinFromHoverSet(OutputPin->LinkedTo[LinkIndex]);
-			}
-		}
-	}
-
-	SGraphNode::OnMouseLeave(MouseEvent);
 }
 
 void SGameFlowGraphNode_State::UpdateGraphNode()
@@ -504,7 +397,6 @@ void SGameFlowGraphNode_State::UpdateGraphNode()
 	InputPins.Empty();
 	OutputPins.Empty();
 
-	// Reset variables that are going to be exposed, in case we are refreshing an already setup node.
 	RightNodeBox.Reset();
 	LeftNodeBox.Reset();
 
@@ -580,97 +472,182 @@ void SGameFlowGraphNode_State::UpdateGraphNode()
 
 void SGameFlowGraphNode_State::CreatePinWidgets()
 {
-	UGameFlowGraphNode_Base* BaseNode = CastChecked<UGameFlowGraphNode_Base>(GraphNode);
-
-	UEdGraphPin* CurPin = BaseNode->GetOutputPin();
-	if (!CurPin->bHidden)
-	{
-		TSharedPtr<SGraphPin> NewPin = SNew(SGameFlowGraphNodeOutputPin, CurPin);
-
-		this->AddPin(NewPin.ToSharedRef());
-	}
+	UGameFlowGraphNode_Base* baseNode = CastChecked<UGameFlowGraphNode_Base>(GraphNode);
+	AddPin(SNew(SGameFlowGraphNodeOutputPin, baseNode->GetOutputPin()));
+	AddPin(SNew(SGraphPin, baseNode->GetInputPin()));
 }
 
 void SGameFlowGraphNode_State::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 {
 	PinToAdd->SetOwner(SharedThis(this));
-	RightNodeBox->AddSlot()
-		.HAlign(HAlign_Fill)
-		.VAlign(VAlign_Fill)
-		.FillHeight(1.0f)
-		[
-			PinToAdd
-		];
-	OutputPins.Add(PinToAdd);
+
+	if (PinToAdd->GetPinObj()->Direction == EEdGraphPinDirection::EGPD_Output)
+	{
+		RightNodeBox->AddSlot()
+			.HAlign(HAlign_Fill)
+			.VAlign(VAlign_Fill)
+			.FillHeight(1.0f)[PinToAdd];
+		OutputPins.Add(PinToAdd);
+	}
+	else
+	{
+		InputPins.Add(PinToAdd);
+	}
+}
+
+void SGameFlowGraphNode_State::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	SGraphNode::OnMouseEnter(MyGeometry, MouseEvent);
+
+	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
+	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
+
+	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
+	check(OwnerPanel.IsValid());
+
+	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
+	{
+		OwnerPanel->AddPinToHoverSet(OutputPin->LinkedTo[LinkIndex]);
+	}
+}
+
+void SGameFlowGraphNode_State::OnMouseLeave(const FPointerEvent& MouseEvent)
+{
+	const UGameFlowGraphNode_Base* BaseNode = Cast<UGameFlowGraphNode_Base>(GraphNode);
+	const UEdGraphPin* OutputPin = BaseNode->GetOutputPin();
+
+	TSharedPtr<SGraphPanel> OwnerPanel = GetOwnerPanel();
+	check(OwnerPanel.IsValid());
+
+	for (int32 LinkIndex = 0; LinkIndex < OutputPin->LinkedTo.Num(); ++LinkIndex)
+	{
+		OwnerPanel->RemovePinFromHoverSet(OutputPin->LinkedTo[LinkIndex]);
+	}
+
+	SGraphNode::OnMouseLeave(MouseEvent);
+}
+
+FReply SGameFlowGraphNode_State::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	{
+		UGameFlow* subFlow = OwningGameFlow->GetStates()[GraphNode->NodeGuid]->SubFlow;
+
+		if (subFlow != nullptr && OwningGameFlow != subFlow)
+		{
+			FGameFlowCoreEditorModule::OpenAssetEditor({ OwningGameFlow->GetStates()[GraphNode->NodeGuid]->SubFlow });
+			return FReply::Handled();
+		}
+	}
+	return FReply::Unhandled();
+}
+
+FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor() const
+{
+	FLinearColor InactiveStateColor(0.08f, 0.08f, 0.08f);
+	FLinearColor ActiveStateColorDim(0.4f, 0.3f, 0.15f);
+	FLinearColor ActiveStateColorBright(1.f, 0.6f, 0.35f);
+
+	return GetBorderBackgroundColor_Internal(InactiveStateColor, ActiveStateColorDim, ActiveStateColorBright);
+}
+
+FSlateColor SGameFlowGraphNode_State::GetBorderBackgroundColor_Internal(FLinearColor InactiveStateColor, FLinearColor ActiveStateColorDim, FLinearColor ActiveStateColorBright) const
+{
+	if (OwningGameFlow->IsStateActive(GraphNode->NodeGuid))
+	{
+		const float anglularFreq = 7;
+		return FMath::Lerp<FLinearColor>(ActiveStateColorDim, ActiveStateColorBright, FMath::Sin(GameFlowEditorTime * anglularFreq));
+	}
+
+	return InactiveStateColor;
 }
 
 FText SGameFlowGraphNode_State::GetPreviewCornerText() const
 {
-	UGameFlowGraphNode_Base* BaseNode = CastChecked<UGameFlowGraphNode_Base>(GraphNode);
-
-	return FText::Format(LOCTEXT("SGameFlowGraphNode_State_PreviewCornerText", "{0} State"), BaseNode->GetNodeTitle(ENodeTitleType::EditableTitle));
+	return FText::Format(LOCTEXT("SGameFlowGraphNode_State_PreviewCornerText", "{0} State"), GraphNode->GetNodeTitle(ENodeTitleType::EditableTitle));
 }
 
-FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const
-{
-	return step ? step->GenerateDescription() : LOCTEXT("SGameFlowGraphNode_State_StepDescription_Default", "None");
-}
+FText SGameFlowGraphNode_State::GetStepDescription(const TObjectPtr<UGameFlowStep>& step) const { return step ? step->GenerateDescription() : LOCTEXT("SGameFlowGraphNode_State_StepDescription_Default", "None"); }
 
-FMargin SGameFlowGraphNode_State::StepsPadding() const
-{
-	return StepsVerticalBoxPtr->GetVisibility() == EVisibility::Visible ? StepsVerticalBoxPadding : ZeroMargin;
-}
+FMargin SGameFlowGraphNode_State::StepsPadding() const { return StepsVerticalBoxPtr->GetVisibility() == EVisibility::Visible ? StepsVerticalBoxPadding : ZeroMargin; }
 
-EVisibility SGameFlowGraphNode_State::StepsVisibility() const
+EVisibility SGameFlowGraphNode_State::StepsVisibility() const ////// TODO Think if can be done with property changed instead of every tick binding
 {
-	int32 num = 0;
+	StepsVerticalBoxPtr->ClearChildren();
 
-	if (UGameFlow* owningGameFlow = OwningGameFlow.Get())
+	const TMap<FGuid, TObjectPtr<UGameFlowState>>& states = OwningGameFlow->GetStates();
+
+	if (states.Contains(GraphNode->NodeGuid))
 	{
-		StepsVerticalBoxPtr->ClearChildren();
-
-		const TMap<FGuid, TObjectPtr<UGameFlowState>>& states = owningGameFlow->GetStates();
-		
-		if (states.Contains(GraphNode->NodeGuid))
+		for (const TObjectPtr<UGameFlowStep>& step : states[GraphNode->NodeGuid]->Steps)
 		{
-			for (const TObjectPtr<UGameFlowStep>& step : states[GraphNode->NodeGuid]->Steps)
-			{
-				StepsVerticalBoxPtr->AddSlot().AutoHeight()[SNew(STextBlock).Text(GetStepDescription(step)).TextStyle(FAppStyle::Get(), "SmallText")];
-				num++;
-			}
+			StepsVerticalBoxPtr->AddSlot().AutoHeight()[SNew(STextBlock).Text(GetStepDescription(step)).TextStyle(FAppStyle::Get(), "SmallText")];
 		}
 	}
 
-	return num > 0 ? EVisibility::Visible : EVisibility::Collapsed;
+	return StepsVerticalBoxPtr->GetChildren()->Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 //------------------------------------------------------
 // SGameFlowGraphNode_Transition
 //------------------------------------------------------
 
+class SGameFlowGraphNode_Transition : public SGraphNode
+{
+public:
+	SLATE_BEGIN_ARGS(SGameFlowGraphNode_Transition) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, UGameFlowGraphNode_Transition* InNode);
+
+	// SNodePanel::SNode interface
+	virtual void MoveTo(const FVector2D& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty = true) override {} // Ignored; position is set by the location of the attached state nodes
+	virtual bool RequiresSecondPassLayout() const override { return true; }
+	virtual void PerformSecondPassLayout(const TMap< UObject*, TSharedRef<SNode> >& NodeToWidgetLookup) const override;
+	// End of SNodePanel::SNode interface
+
+	// SGraphNode interface
+	virtual void UpdateGraphNode() override;
+	// End of SGraphNode interface
+
+	// SWidget interface
+	void OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	// End of SWidget interface
+
+	// Calculate position for multiple nodes to be placed between a start and end point, by providing this nodes index and max expected nodes 
+	void PositionBetweenTwoNodesWithOffset(const FGeometry& StartGeom, const FGeometry& EndGeom, int32 NodeIndex, int32 MaxNodes) const;
+
+	static FLinearColor StaticGetTransitionColor(UGameFlowGraphNode_Transition* TransNode, bool bIsHovered);
+private:
+	TSharedPtr<STextEntryPopup> TextEntryWidget;
+
+	/** Cache of the widget representing the previous state node */
+	mutable TWeakPtr<SNode> PrevNodeWidgetPtr;
+
+	UGameFlow* OwningGameFlow;
+
+	UGameFlowGraphNode_Transition* TransitionGraphNode;
+
+private:
+	FText GetPreviewCornerText(bool reverse) const;
+	FSlateColor GetTransitionColor() const;
+	FText GetTransitionKey() const;
+};
+
 void SGameFlowGraphNode_Transition::Construct(const FArguments& InArgs, UGameFlowGraphNode_Transition* InNode)
 {
 	OwningGameFlow = InNode->GetGraph()->GetTypedOuter<UGameFlow>();
+	
 	TransitionGraphNode = InNode;
 
 	this->GraphNode = InNode;
+
 	this->UpdateGraphNode();
-}
-
-void SGameFlowGraphNode_Transition::MoveTo(const FVector2D& NewPosition, FNodeSet& NodeFilter, bool bMarkDirty)
-{
-	// Ignored; position is set by the location of the attached state nodes
-}
-
-bool SGameFlowGraphNode_Transition::RequiresSecondPassLayout() const
-{
-	return true;
 }
 
 void SGameFlowGraphNode_Transition::PerformSecondPassLayout(const TMap< UObject*, TSharedRef<SNode> >& NodeToWidgetLookup) const
 {
-	UGameFlowGraphNode_Transition* TransNode = CastChecked<UGameFlowGraphNode_Transition>(GraphNode);
-
 	// Find the geometry of the state nodes we're connecting
 	FGeometry StartGeom;
 	FGeometry EndGeom;
@@ -678,32 +655,32 @@ void SGameFlowGraphNode_Transition::PerformSecondPassLayout(const TMap< UObject*
 	int32 TransIndex = 0;
 	int32 NumOfTrans = 1;
 
-	UGameFlowGraphNode_Base* PrevState = TransNode->GetPreviousState();
-	UGameFlowGraphNode_Base* NextState = TransNode->GetNextState();
-	if ((PrevState != NULL) && (NextState != NULL))
+	UGameFlowGraphNode_Base* PrevNode = TransitionGraphNode->GetPrevNode();
+	UGameFlowGraphNode_Base* NextNode = TransitionGraphNode->GetNextNode();
+	if ((PrevNode != NULL) && (NextNode != NULL))
 	{
-		const TSharedRef<SNode>* pPrevNodeWidget = NodeToWidgetLookup.Find(PrevState);
-		const TSharedRef<SNode>* pNextNodeWidget = NodeToWidgetLookup.Find(NextState);
+		const TSharedRef<SNode>* pPrevNodeWidget = NodeToWidgetLookup.Find(PrevNode);
+		const TSharedRef<SNode>* pNextNodeWidget = NodeToWidgetLookup.Find(NextNode);
 		if ((pPrevNodeWidget != NULL) && (pNextNodeWidget != NULL))
 		{
 			const TSharedRef<SNode>& PrevNodeWidget = *pPrevNodeWidget;
 			const TSharedRef<SNode>& NextNodeWidget = *pNextNodeWidget;
 
-			StartGeom = FGeometry(FVector2D(PrevState->NodePosX, PrevState->NodePosY), FVector2D::ZeroVector, PrevNodeWidget->GetDesiredSize(), 1.0f);
-			EndGeom = FGeometry(FVector2D(NextState->NodePosX, NextState->NodePosY), FVector2D::ZeroVector, NextNodeWidget->GetDesiredSize(), 1.0f);
+			StartGeom = FGeometry(FVector2D(PrevNode->NodePosX, PrevNode->NodePosY), FVector2D::ZeroVector, PrevNodeWidget->GetDesiredSize(), 1.0f);
+			EndGeom = FGeometry(FVector2D(NextNode->NodePosX, NextNode->NodePosY), FVector2D::ZeroVector, NextNodeWidget->GetDesiredSize(), 1.0f);
 
 			TArray<UGameFlowGraphNode_Transition*> Transitions;
-			PrevState->GetTransitionList(Transitions);
+			PrevNode->GetTransitionList(Transitions);
 
-			Transitions = Transitions.FilterByPredicate([NextState](const UGameFlowGraphNode_Transition* InTransition) -> bool
+			Transitions = Transitions.FilterByPredicate([NextNode](const UGameFlowGraphNode_Transition* InTransition) -> bool
 				{
-					return InTransition->GetNextState() == NextState;
+					return InTransition->GetNextNode() == NextNode;
 				});
 
-			TransIndex = Transitions.IndexOfByKey(TransNode);
+			TransIndex = Transitions.IndexOfByKey(TransitionGraphNode);
 			NumOfTrans = Transitions.Num();
 
-			PrevStateNodeWidgetPtr = PrevNodeWidget;
+			PrevNodeWidgetPtr = PrevNodeWidget;
 		}
 	}
 
@@ -716,7 +693,6 @@ void SGameFlowGraphNode_Transition::UpdateGraphNode()
 	InputPins.Empty();
 	OutputPins.Empty();
 
-	// Reset variables that are going to be exposed, in case we are refreshing an already setup node.
 	RightNodeBox.Reset();
 	LeftNodeBox.Reset();
 
@@ -730,27 +706,21 @@ void SGameFlowGraphNode_Transition::UpdateGraphNode()
 				.Padding(TransitionKeyPadding)
 				.BorderBackgroundColor(FLinearColor(0.08f, 0.08f, 0.08f))
 				[
-					SNew(STextBlock).Text(this, &SGameFlowGraphNode_Transition::GetTransitionKey)
-						.TextStyle(FAppStyle::Get(), "SmallText")
+					SNew(STextBlock).Text(this, &SGameFlowGraphNode_Transition::GetTransitionKey).TextStyle(FAppStyle::Get(), "SmallText")
 				]
 		];
 }
 
 FText SGameFlowGraphNode_Transition::GetPreviewCornerText(bool bReverse) const
 {
-	UGameFlowGraphNode_Transition* TransNode = CastChecked<UGameFlowGraphNode_Transition>(GraphNode);
-
-	UGameFlowGraphNode_Base* PrevState = (bReverse ? TransNode->GetNextState() : TransNode->GetPreviousState());
-	UGameFlowGraphNode_Base* NextState = (bReverse ? TransNode->GetPreviousState() : TransNode->GetNextState());
+	UGameFlowGraphNode_Base* PrevNode = (bReverse ? TransitionGraphNode->GetNextNode() : TransitionGraphNode->GetPrevNode());
+	UGameFlowGraphNode_Base* NextNode = (bReverse ? TransitionGraphNode->GetPrevNode() : TransitionGraphNode->GetNextNode());
 
 	FText Result = LOCTEXT("SGameFlowGraphNode_Transition_BadTransition", "Bad transition (missing source or target)");
 
-	if (PrevState != NULL)
+	if (PrevNode != NULL && NextNode != NULL)
 	{
-		if (NextState != NULL)
-		{
-			Result = FText::Format(LOCTEXT("SGameFlowGraphNode_Transition_TransitionXToY", "{0} to {1}"), PrevState->GetNodeTitle(ENodeTitleType::EditableTitle), NextState->GetNodeTitle(ENodeTitleType::EditableTitle));
-		}
+		Result = FText::Format(LOCTEXT("SGameFlowGraphNode_Transition_TransitionXToY", "{0} to {1}"), PrevNode->GetNodeTitle(ENodeTitleType::EditableTitle), NextNode->GetNodeTitle(ENodeTitleType::EditableTitle));
 	}
 
 	return Result;
@@ -758,7 +728,6 @@ FText SGameFlowGraphNode_Transition::GetPreviewCornerText(bool bReverse) const
 
 FLinearColor SGameFlowGraphNode_Transition::StaticGetTransitionColor(UGameFlowGraphNode_Transition* TransNode, bool bIsHovered)
 {
-	//@TODO: Make configurable by styling
 	const FLinearColor ActiveColor(1.0f, 0.4f, 0.3f, 1.0f);
 	const FLinearColor HoverColor(0.724f, 0.256f, 0.0f, 1.0f);
 	FLinearColor BaseColor(0.9f, 0.9f, 0.9f, 1.0f);
@@ -768,31 +737,23 @@ FLinearColor SGameFlowGraphNode_Transition::StaticGetTransitionColor(UGameFlowGr
 
 FSlateColor SGameFlowGraphNode_Transition::GetTransitionColor() const
 {
-	// Highlight the transition node when the node is hovered or when the previous state is hovered
-	UGameFlowGraphNode_Transition* TransNode = CastChecked<UGameFlowGraphNode_Transition>(GraphNode);
-	return StaticGetTransitionColor(TransNode, (IsHovered() || (PrevStateNodeWidgetPtr.IsValid() && PrevStateNodeWidgetPtr.Pin()->IsHovered())));
+	return StaticGetTransitionColor(TransitionGraphNode, (IsHovered() || (PrevNodeWidgetPtr.IsValid() && PrevNodeWidgetPtr.Pin()->IsHovered())));
 }
 
 FText SGameFlowGraphNode_Transition::GetTransitionKey() const
 {
-	if (TransitionGraphNode.IsValid())
+	const UGameFlowGraphNode_Base* prevNode = TransitionGraphNode->GetPrevNode();
+	const UGameFlowGraphNode_Base* nextNode = TransitionGraphNode->GetNextNode();
+
+	if (prevNode && nextNode)
 	{
-		const UGameFlowGraphNode_Base* prevNode = TransitionGraphNode->GetPreviousState();
-		const UGameFlowGraphNode_Base* nextNode = TransitionGraphNode->GetNextState();
+		const TMap<FGuid, FGameFlowTransitionCollection>& transitionCollections = OwningGameFlow->GetTransitionCollections();
 
-		if (prevNode && nextNode)
+		if (transitionCollections.Contains(prevNode->NodeGuid))
 		{
-			if (const UGameFlow* owningGameFlow = OwningGameFlow.Get())
+			if (transitionCollections[prevNode->NodeGuid].Transitions.Contains(nextNode->NodeGuid))
 			{
-				const TMap<FGuid, FGameFlowTransitionCollection>& transitionCollections = owningGameFlow->GetTransitionCollections();
-
-				if (transitionCollections.Contains(prevNode->NodeGuid))
-				{
-					if (transitionCollections[prevNode->NodeGuid].Transitions.Contains(nextNode->NodeGuid))
-					{
-						return FText::FromString(GetNameSafe(transitionCollections[prevNode->NodeGuid].Transitions[nextNode->NodeGuid]->TransitionKey));
-					}
-				}
+				return FText::FromString(GetNameSafe(transitionCollections[prevNode->NodeGuid].Transitions[nextNode->NodeGuid]->TransitionKey));
 			}
 		}
 	}
@@ -802,22 +763,14 @@ FText SGameFlowGraphNode_Transition::GetTransitionKey() const
 
 void SGameFlowGraphNode_Transition::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	UGameFlowGraphNode_Transition* TransNode = CastChecked<UGameFlowGraphNode_Transition>(GraphNode);
-	if (UEdGraphPin* Pin = TransNode->GetInputPin())
-	{
-		GetOwnerPanel()->AddPinToHoverSet(Pin);
-	}
-
 	SGraphNode::OnMouseEnter(MyGeometry, MouseEvent);
+
+	GetOwnerPanel()->AddPinToHoverSet(TransitionGraphNode->GetInputPin());
 }
 
 void SGameFlowGraphNode_Transition::OnMouseLeave(const FPointerEvent& MouseEvent)
 {
-	UGameFlowGraphNode_Transition* TransNode = CastChecked<UGameFlowGraphNode_Transition>(GraphNode);
-	if (UEdGraphPin* Pin = TransNode->GetInputPin())
-	{
-		GetOwnerPanel()->RemovePinFromHoverSet(Pin);
-	}
+	GetOwnerPanel()->RemovePinFromHoverSet(TransitionGraphNode->GetInputPin());
 
 	SGraphNode::OnMouseLeave(MouseEvent);
 }
@@ -869,7 +822,7 @@ void SGameFlowGraphNode_Transition::PositionBetweenTwoNodesWithOffset(const FGeo
 }
 
 //------------------------------------------------------
-// FGameFlowGraphNodeFactory
+// FGameFlowGraphConnectionDrawingPolicy
 //------------------------------------------------------
 
 class FGameFlowGraphConnectionDrawingPolicy : public FConnectionDrawingPolicy
@@ -904,9 +857,7 @@ protected:
 };
 
 FGameFlowGraphConnectionDrawingPolicy::FGameFlowGraphConnectionDrawingPolicy(int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const FSlateRect& InClippingRect, FSlateWindowElementList& InDrawElements, UEdGraph* InGraphObj)
-	: FConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, ZoomFactor, InClippingRect, InDrawElements)
-	, GraphObj(InGraphObj)
-{}
+	: FConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, ZoomFactor, InClippingRect, InDrawElements), GraphObj(InGraphObj) {}
 
 void FGameFlowGraphConnectionDrawingPolicy::DetermineWiringStyle(UEdGraphPin* OutputPin, UEdGraphPin* InputPin, /*inout*/ FConnectionParams& Params)
 {
@@ -948,12 +899,12 @@ void FGameFlowGraphConnectionDrawingPolicy::DetermineLinkGeometry(
 	}
 	else if (UGameFlowGraphNode_Transition* TransNode = Cast<UGameFlowGraphNode_Transition>(InputPin->GetOwningNode()))
 	{
-		UGameFlowGraphNode_Base* PrevState = TransNode->GetPreviousState();
-		UGameFlowGraphNode_Base* NextState = TransNode->GetNextState();
-		if ((PrevState != NULL) && (NextState != NULL))
+		UGameFlowGraphNode_Base* PrevNode = TransNode->GetPrevNode();
+		UGameFlowGraphNode_Base* NextNode = TransNode->GetNextNode();
+		if ((PrevNode != NULL) && (NextNode != NULL))
 		{
-			int32* PrevNodeIndex = NodeWidgetMap.Find(PrevState);
-			int32* NextNodeIndex = NodeWidgetMap.Find(NextState);
+			int32* PrevNodeIndex = NodeWidgetMap.Find(PrevNode);
+			int32* NextNodeIndex = NodeWidgetMap.Find(NextNode);
 			if ((PrevNodeIndex != NULL) && (NextNodeIndex != NULL))
 			{
 				StartWidgetGeometry = &(ArrangedNodes[*PrevNodeIndex]);
@@ -1066,6 +1017,11 @@ FVector2D FGameFlowGraphConnectionDrawingPolicy::ComputeSplineTangent(const FVec
 // FGameFlowGraphNodeFactory
 //------------------------------------------------------
 
+struct FGameFlowGraphNodeFactory : public FGraphPanelNodeFactory
+{
+	virtual TSharedPtr<SGraphNode> CreateNode(UEdGraphNode* InNode) const override;
+};
+
 TSharedPtr<class SGraphNode> FGameFlowGraphNodeFactory::CreateNode(class UEdGraphNode* InNode) const
 {
 	if (UGameFlowGraphNode_State* StateNode = Cast<UGameFlowGraphNode_State>(InNode))
@@ -1088,6 +1044,12 @@ TSharedPtr<class SGraphNode> FGameFlowGraphNodeFactory::CreateNode(class UEdGrap
 // FGameFlowGraphPinFactory
 //------------------------------------------------------
 
+struct FGameFlowGraphPinFactory : public FGraphPanelPinFactory
+{
+public:
+	virtual TSharedPtr<class SGraphPin> CreatePin(class UEdGraphPin* Pin) const override;
+};
+
 TSharedPtr<class SGraphPin> FGameFlowGraphPinFactory::CreatePin(class UEdGraphPin* InPin) const
 {
 	if (InPin->GetSchema()->IsA<UGameFlowGraphSchema>() && InPin->PinType.PinCategory == UGameFlowGraphSchema::PC_Exec)
@@ -1101,6 +1063,12 @@ TSharedPtr<class SGraphPin> FGameFlowGraphPinFactory::CreatePin(class UEdGraphPi
 //------------------------------------------------------
 // FGameFlowGraphPinConnectionFactory
 //------------------------------------------------------
+
+struct FGameFlowGraphPinConnectionFactory : public FGraphPanelPinConnectionFactory
+{
+public:
+	virtual FConnectionDrawingPolicy* CreateConnectionPolicy(const UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const class FSlateRect& InClippingRect, class FSlateWindowElementList& InDrawElements, UEdGraph* InGraphObj) const override;
+};
 
 class FConnectionDrawingPolicy* FGameFlowGraphPinConnectionFactory::CreateConnectionPolicy(const class UEdGraphSchema* Schema, int32 InBackLayerID, int32 InFrontLayerID, float ZoomFactor, const class FSlateRect& InClippingRect, class FSlateWindowElementList& InDrawElements, class UEdGraph* InGraphObj) const
 {
@@ -1127,7 +1095,6 @@ UGameFlowGraph::UGameFlowGraph(const FObjectInitializer& ObjectInitializer) :Sup
 
 UEdGraphNode* FGameFlowGraphSchemaAction_NewComment::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode/* = true*/)
 {
-	// Add menu item for creating comment boxes
 	UEdGraphNode_Comment* CommentTemplate = NewObject<UEdGraphNode_Comment>();
 
 	FVector2D SpawnLocation = Location;
@@ -1145,20 +1112,18 @@ UEdGraphNode* FGameFlowGraphSchemaAction_NewComment::PerformAction(class UEdGrap
 
 UEdGraphNode* FGameFlowGraphSchemaAction_NewNode::PerformAction(class UEdGraph* ParentGraph, UEdGraphPin* FromPin, const FVector2D Location, bool bSelectNewNode)
 {
-	UEdGraphNode* ResultNode = NULL;
-
-	// If there is a template, we actually use it
 	if (NodeTemplate != NULL)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("FGameFlowGraphSchema_Action_AddNode", "Add Node"));
+		const FScopedTransaction Transaction(LOCTEXT("Transaction_FGameFlowGraphSchemaAction_NewNode::PerformAction", "Add Node"));
+		
 		ParentGraph->Modify();
+		
 		if (FromPin)
 		{
 			FromPin->Modify();
 		}
 
-		// set outer to be the graph so it doesn't go away
-		NodeTemplate->Rename(NULL, ParentGraph);
+		NodeTemplate->Rename(NULL, ParentGraph);		
 		ParentGraph->AddNode(NodeTemplate, true, bSelectNewNode);
 
 		NodeTemplate->CreateNewGuid();
@@ -1170,21 +1135,17 @@ UEdGraphNode* FGameFlowGraphSchemaAction_NewNode::PerformAction(class UEdGraph* 
 		NodeTemplate->NodePosY = Location.Y;
 		NodeTemplate->SnapToGrid(GetDefault<UEditorStyleSettings>()->GridSnapSize);
 
-		ResultNode = NodeTemplate;
+		NodeTemplate->SetFlags(RF_Transactional);
 
-		ResultNode->SetFlags(RF_Transactional);
-
-		if (UGameFlow* gameFlow = ParentGraph->GetTypedOuter<UGameFlow>())
+		if (NodeTemplate->IsA<UGameFlowGraphNode_State>())
 		{
-			if (NodeTemplate->IsA<UGameFlowGraphNode_State>())
-			{
-				gameFlow->Modify();
-				gameFlow->AddState(NodeTemplate->NodeGuid, FName(NodeTemplate->GetNodeTitle(ENodeTitleType::EditableTitle).ToString()));
-			}
+			UGameFlow* gameFlow = ParentGraph->GetTypedOuter<UGameFlow>();
+			gameFlow->Modify();
+			gameFlow->AddState(NodeTemplate->NodeGuid, FName(NodeTemplate->GetNodeTitle(ENodeTitleType::EditableTitle).ToString()));
 		}
 	}
 
-	return ResultNode;
+	return NodeTemplate;
 }
 
 void FGameFlowGraphSchemaAction_NewNode::AddReferencedObjects(FReferenceCollector& Collector)
@@ -1202,13 +1163,10 @@ const FName UGameFlowGraphSchema::PC_Exec(TEXT("exec"));
 
 const FName UGameFlowGraphSchema::PC_Transition = FName("Transition");
 
-UGameFlowGraphSchema::UGameFlowGraphSchema(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{}
+UGameFlowGraphSchema::UGameFlowGraphSchema(const FObjectInitializer& ObjectInitializer) :Super(ObjectInitializer) {}
 
 void UGameFlowGraphSchema::CreateDefaultNodesForGraph(UEdGraph& Graph) const
 {
-	// Create the entry/exit tunnels
 	FGraphNodeCreator<UGameFlowGraphNode_Start> NodeCreator(Graph);
 	UGameFlowGraphNode_Start* EntryNode = NodeCreator.CreateNode();
 	NodeCreator.Finalize();
@@ -1217,13 +1175,11 @@ void UGameFlowGraphSchema::CreateDefaultNodesForGraph(UEdGraph& Graph) const
 
 const FPinConnectionResponse UGameFlowGraphSchema::CanCreateConnection(const UEdGraphPin* PinA, const UEdGraphPin* PinB) const
 {
-	// Make sure the pins are not on the same node
 	if (PinA->GetOwningNode() == PinB->GetOwningNode())
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Both are on the same node"));
 	}
 
-	// Connect entry node to a state is OK
 	const bool bPinAIsEntry = PinA->GetOwningNode()->IsA(UGameFlowGraphNode_Start::StaticClass());
 	const bool bPinBIsEntry = PinB->GetOwningNode()->IsA(UGameFlowGraphNode_Start::StaticClass());
 	const bool bPinAIsStateNode = PinA->GetOwningNode()->IsA(UGameFlowGraphNode_Base::StaticClass());
@@ -1241,29 +1197,18 @@ const FPinConnectionResponse UGameFlowGraphSchema::CanCreateConnection(const UEd
 			return FPinConnectionResponse(CONNECT_RESPONSE_BREAK_OTHERS_B, TEXT(""));
 		}
 
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Entry must connect to a State node"));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Entry must be wired to a State node"));
 	}
-
 
 	const bool bPinAIsTransition = PinA->GetOwningNode()->IsA(UGameFlowGraphNode_Transition::StaticClass());
 	const bool bPinBIsTransition = PinB->GetOwningNode()->IsA(UGameFlowGraphNode_Transition::StaticClass());
 
 	if (bPinAIsTransition && bPinBIsTransition)
 	{
-		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Cannot wire a transition to a transition"));
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, TEXT("Cannot wire Transition node to a Transition node"));
 	}
 
-	// Compare the directions
-	bool bDirectionsOK = false;
-
-	if ((PinA->Direction == EGPD_Input) && (PinB->Direction == EGPD_Output))
-	{
-		bDirectionsOK = true;
-	}
-	else if ((PinB->Direction == EGPD_Input) && (PinA->Direction == EGPD_Output))
-	{
-		bDirectionsOK = true;
-	}
+	const bool bDirectionsOK = (PinA->Direction == EGPD_Input) && (PinB->Direction == EGPD_Output) || (PinB->Direction == EGPD_Input) && (PinA->Direction == EGPD_Output);
 
 	/*
 	if (!bDirectionsOK)
@@ -1272,7 +1217,6 @@ const FPinConnectionResponse UGameFlowGraphSchema::CanCreateConnection(const UEd
 	}
 	*/
 
-	// Transitions are exclusive (both input and output), but states are not
 	if (bPinAIsTransition)
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_BREAK_OTHERS_A, TEXT(""));
@@ -1308,14 +1252,7 @@ bool UGameFlowGraphSchema::TryCreateConnection(UEdGraphPin* PinA, UEdGraphPin* P
 		}
 	}
 
-	const bool bModified = UEdGraphSchema::TryCreateConnection(PinA, PinB);
-
-	if (bModified)
-	{
-		PinA->GetOwningNode()->GetGraph()->GetTypedOuter<UGameFlow>()->Modify();
-	}
-
-	return bModified;
+	return UEdGraphSchema::TryCreateConnection(PinA, PinB);
 }
 
 bool UGameFlowGraphSchema::CreateAutomaticConversionNodeAndConnections(UEdGraphPin* PinA, UEdGraphPin* PinB) const
@@ -1335,7 +1272,7 @@ bool UGameFlowGraphSchema::CreateAutomaticConversionNodeAndConnections(UEdGraphP
 
 		if (PinA->Direction == EGPD_Output)
 		{
-			TransitionNode->CreateConnections(NodeA, NodeB);			
+			TransitionNode->CreateConnections(NodeA, NodeB);
 			gameFlow->AddTransition(NodeA->NodeGuid, NodeB->NodeGuid);
 		}
 		else
@@ -1396,7 +1333,6 @@ void UGameFlowGraphSchema::GetContextMenuActions(UToolMenu* Menu, UGraphNodeCont
 			{
 				// Node contextual actions
 				Section.AddMenuEntry(FGenericCommands::Get().Delete);
-				Section.AddMenuEntry(FGenericCommands::Get().Cut);
 				Section.AddMenuEntry(FGenericCommands::Get().Copy);
 				Section.AddMenuEntry(FGenericCommands::Get().Duplicate);
 				Section.AddMenuEntry(FGraphEditorCommands::Get().ReconstructNodes);
@@ -1461,35 +1397,26 @@ void UGameFlowGraphSchema::GetAssetsPinHoverMessage(const TArray<FAssetData>& As
 
 void UGameFlowGraphSchema::BreakNodeLinks(UEdGraphNode& TargetNode) const
 {
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GraphEd_BreakNodeLinks", "Break Node Links"));
+	const FScopedTransaction Transaction(LOCTEXT("Transaction_UGameFlowGraphSchema::BreakNodeLinks", "Break Node Links"));
 
 	Super::BreakNodeLinks(TargetNode);
-
-	TargetNode.GetGraph()->GetTypedOuter<UGameFlow>()->Modify();
 }
 
 void UGameFlowGraphSchema::BreakPinLinks(UEdGraphPin& TargetPin, bool bSendsNodeNotification) const
 {
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GraphEd_BreakPinLinks", "Break Pin Links"));
+	const FScopedTransaction Transaction(LOCTEXT("Transaction_UGameFlowGraphSchema::BreakPinLinks", "Break Pin Links"));
 
 	Super::BreakPinLinks(TargetPin, bSendsNodeNotification);
-
-	TargetPin.GetOwningNode()->GetGraph()->GetTypedOuter<UGameFlow>()->Modify();
 }
 
 void UGameFlowGraphSchema::BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPin* TargetPin) const
 {
-	const FScopedTransaction Transaction(NSLOCTEXT("UnrealEd", "GraphEd_BreakSinglePinLink", "Break Pin Link"));
+	const FScopedTransaction Transaction(LOCTEXT("Transaction_UGameFlowGraphSchema::BreakSinglePinLink", "Break Pin Link"));
 
 	Super::BreakSinglePinLink(SourcePin, TargetPin);
-
-	TargetPin->GetOwningNode()->GetGraph()->GetTypedOuter<UGameFlow>()->Modify();
 }
 
-TSharedPtr<FEdGraphSchemaAction> UGameFlowGraphSchema::GetCreateCommentAction() const
-{
-	return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FGameFlowGraphSchemaAction_NewComment));
-}
+TSharedPtr<FEdGraphSchemaAction> UGameFlowGraphSchema::GetCreateCommentAction() const { return TSharedPtr<FEdGraphSchemaAction>(static_cast<FEdGraphSchemaAction*>(new FGameFlowGraphSchemaAction_NewComment)); }
 
 //------------------------------------------------------
 // UFactory_GameFlow
@@ -1553,7 +1480,7 @@ uint32 UFactory_GameFlowTransitionKey::GetMenuCategories() const { return EAsset
 // FGameFlowEditor
 //------------------------------------------------------
 
-class FGameFlowEditor : public FEditorUndoClient, public FAssetEditorToolkit
+class FGameFlowEditor : public FEditorUndoClient, public FAssetEditorToolkit, public FTickableEditorObject
 {
 public:
 
@@ -1582,6 +1509,10 @@ public:
 	virtual FText GetBaseToolkitName() const override { return LOCTEXT("FGameFlowEditor_BaseToolkitName", "Game Flow Editor"); }
 	virtual FString GetWorldCentricTabPrefix() const override { return "GameFlowEditor"; }
 
+	virtual void Tick(float DeltaTime) override { GameFlowEditorTime += DeltaTime; }
+	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(FGameFlowEditor, STATGROUP_Tickables); }
+	virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
+
 protected:
 
 	TSharedRef<SDockTab> SpawnTab_DetailsTab(const FSpawnTabArgs& Args);
@@ -1598,8 +1529,6 @@ protected:
 	virtual void PostRedo(bool bSuccess) override;
 	// End of FEditorUndoClient
 
-	FGraphPanelSelectionSet GetSelectedNodes() const;
-
 	void SelectAllNodes();
 
 	bool CanSelectAllNodes() const { return true; }
@@ -1610,13 +1539,29 @@ protected:
 
 	void CopySelectedNodes();
 
+	template<class Predicate>
+	bool CheckPredicateOnSelectedNodes(const Predicate& predicate) const
+	{
+		if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+		{
+			if (graphEditor.IsValid())
+			{
+				const FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
+
+				for (FGraphPanelSelectionSet::TConstIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
+				{
+					if (predicate(Cast<UEdGraphNode>(*NodeIt)))
+					{
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
 	bool CanCopyNodes() const;
-
-	void DeleteSelectedDuplicatableNodes();
-
-	void CutSelectedNodes() { CopySelectedNodes(); DeleteSelectedDuplicatableNodes(); }
-
-	bool CanCutNodes() const { return CanCopyNodes() && CanDeleteNodes(); }
 
 	void PasteNodes();
 
@@ -1630,6 +1575,10 @@ protected:
 
 	bool CanCreateComment() const;
 
+	void StoreSelectedNodes(TSet<FGuid>& selectedNodes);
+
+	void ApplySelectedNodes(const TSet<FGuid>& selectedNodes);
+
 protected:
 
 	UGameFlow* GameFlow;
@@ -1639,6 +1588,10 @@ protected:
 	TWeakPtr<SGraphEditor> GraphEditorPtr;
 
 	TSharedPtr<IDetailsView> DetailsView;
+
+	TSet<FGuid> PrevSelectedNodes;
+
+	TSet<FGuid> NextSelectedNodes;
 };
 
 const FName FGameFlowEditor::AppIdentifier(TEXT("FGameFlowEditor_AppIdentifier"));
@@ -1647,6 +1600,8 @@ const FName FGameFlowEditor::GraphTabId(TEXT("FGameFlowEditor_GraphTab_Id"));
 
 void FGameFlowEditor::InitGameFlowEditor(const EToolkitMode::Type Mode, const TSharedPtr< class IToolkitHost >& InitToolkitHost, UGameFlow* gameFlow)
 {
+	GameFlowEditorTime = 0;
+
 	check(gameFlow != NULL);
 
 	GameFlow = gameFlow;
@@ -1740,7 +1695,6 @@ TSharedRef<SDockTab> FGameFlowEditor::SpawnTab_GraphTab(const FSpawnTabArgs& Arg
 	if (GameFlow->EdGraph == NULL)
 	{
 		UGameFlowGraph* gameFlowGraph = NewObject<UGameFlowGraph>(GameFlow, NAME_None, RF_Transactional);
-		gameFlowGraph->SetGameFlow(GameFlow);
 
 		GameFlow->EdGraph = gameFlowGraph;
 		GameFlow->EdGraph->GetSchema()->CreateDefaultNodesForGraph(*GameFlow->EdGraph);
@@ -1791,11 +1745,6 @@ void FGameFlowEditor::CreateCommandList()
 		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanCopyNodes)
 	);
 
-	GraphEditorCommands->MapAction(FGenericCommands::Get().Cut,
-		FExecuteAction::CreateRaw(this, &FGameFlowEditor::CutSelectedNodes),
-		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanCutNodes)
-	);
-
 	GraphEditorCommands->MapAction(FGenericCommands::Get().Paste,
 		FExecuteAction::CreateRaw(this, &FGameFlowEditor::PasteNodes),
 		FCanExecuteAction::CreateRaw(this, &FGameFlowEditor::CanPasteNodes)
@@ -1828,8 +1777,8 @@ void FGameFlowEditor::OnSelectionChanged(const TSet<UObject*>& selectedNodes)
 		}
 		else if (const UGameFlowGraphNode_Transition* transitionNode = Cast<UGameFlowGraphNode_Transition>(*selectedNodes.begin()))
 		{
-			const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
-			const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
+			const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPrevNode();
+			const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextNode();
 
 			if (prevNode && nextNode)
 			{
@@ -1853,9 +1802,14 @@ void FGameFlowEditor::OnNodeTitleCommitted(const FText& NewText, ETextCommit::Ty
 {
 	if (NodeBeingChanged)
 	{
-		const FScopedTransaction Transaction(LOCTEXT("K2_RenameNode", "Rename Node"));
+		const FScopedTransaction Transaction(LOCTEXT("Transaction_FGameFlowEditor::OnNodeTitleCommitted", "Rename Node"));
+
+		StoreSelectedNodes(PrevSelectedNodes);
+
 		NodeBeingChanged->Modify();
 		NodeBeingChanged->OnRenameNode(NewText.ToString());
+
+		StoreSelectedNodes(NextSelectedNodes);
 	}
 }
 
@@ -1870,6 +1824,7 @@ void FGameFlowEditor::PostUndo(bool bSuccess)
 			{
 				graphEditor->ClearSelectionSet();
 				graphEditor->NotifyGraphChanged();
+				ApplySelectedNodes(PrevSelectedNodes);
 			}
 		}
 		FSlateApplication::Get().DismissAllMenus();
@@ -1887,25 +1842,11 @@ void FGameFlowEditor::PostRedo(bool bSuccess)
 			{
 				graphEditor->ClearSelectionSet();
 				graphEditor->NotifyGraphChanged();
+				ApplySelectedNodes(NextSelectedNodes);
 			}
 		}
 		FSlateApplication::Get().DismissAllMenus();
 	}
-}
-
-FGraphPanelSelectionSet FGameFlowEditor::GetSelectedNodes() const
-{
-	FGraphPanelSelectionSet CurrentSelection;
-
-	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
-	{
-		if (graphEditor.IsValid())
-		{
-			CurrentSelection = graphEditor->GetSelectedNodes();
-		}
-	}
-
-	return CurrentSelection;
 }
 
 void FGameFlowEditor::SelectAllNodes()
@@ -1925,171 +1866,106 @@ void FGameFlowEditor::DeleteSelectedNodes()
 	{
 		if (graphEditor.IsValid())
 		{
-			const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
-
-			graphEditor->GetCurrentGraph()->Modify();
-
 			const FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
-			graphEditor->ClearSelectionSet();
 
 			TArray<UGameFlowGraphNode_Transition*> transitionNodes;
 			TArray<UEdGraphNode*> otherNodes;
 
 			for (FGraphPanelSelectionSet::TConstIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
 			{
-				if (UEdGraphNode* Node = Cast<UEdGraphNode>(*NodeIt))
+				if (UEdGraphNode* node = Cast<UEdGraphNode>(*NodeIt))
 				{
-					if (Node->CanUserDeleteNode())
+					if (node->CanUserDeleteNode())
 					{
-						if (UGameFlowGraphNode_Transition* transitionNode = Cast<UGameFlowGraphNode_Transition>(Node))
+						if (UGameFlowGraphNode_Transition* transitionNode = Cast<UGameFlowGraphNode_Transition>(node))
 						{
 							transitionNodes.Add(transitionNode);
 						}
 						else
 						{
-							otherNodes.Add(Node);
+							otherNodes.Add(node);
 						}
 					}
 				}
 			}
 
-			const TMap<FGuid, TObjectPtr<UGameFlowState>>& states = GameFlow->GetStates();
-
-			// We cant implement this logic in DestroyNode because links will be already broken and we cant get prevNode and nextNode
-			for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
+			if (transitionNodes.Num() > 0 || otherNodes.Num() > 0)
 			{
-				const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPreviousState();
-				const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextState();
+				const FScopedTransaction Transaction(FGenericCommands::Get().Delete->GetDescription());
 
-				if (prevNode && nextNode)
+				StoreSelectedNodes(PrevSelectedNodes);
+
+				UEdGraph* graph = graphEditor->GetCurrentGraph();
+				graph->Modify();
+
+				graphEditor->ClearSelectionSet();
+
+				if (transitionNodes.Num() > 0 || otherNodes.ContainsByPredicate([](const UEdGraphNode* graphNode) { return graphNode->IsA<UGameFlowGraphNode_State>(); }))
 				{
-					GameFlow->DestroyTransition(prevNode->NodeGuid, nextNode->NodeGuid);
+					GameFlow->Modify();
 				}
 
-				transitionNode->Modify();
-				graphEditor->GetCurrentGraph()->GetSchema()->BreakNodeLinks(*transitionNode);
-				transitionNode->DestroyNode();
-			}
+				// We cant implement this logic in DestroyNode because links will be already broken and we cant get prevNode and nextNode
 
-			for (UEdGraphNode* otherNode : otherNodes)
-			{
-				otherNode->Modify();
-				graphEditor->GetCurrentGraph()->GetSchema()->BreakNodeLinks(*otherNode);
-				otherNode->DestroyNode();
+				for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
+				{
+					const UGameFlowGraphNode_Base* prevNode = transitionNode->GetPrevNode();
+					const UGameFlowGraphNode_Base* nextNode = transitionNode->GetNextNode();
+					GameFlow->DestroyTransition(prevNode->NodeGuid, nextNode->NodeGuid);
+
+					graph->GetSchema()->BreakPinLinks(*transitionNode->Pins[0], false);
+				}
+
+				for (UEdGraphNode* otherNode : otherNodes)
+				{
+					GameFlow->DestroyState(otherNode->NodeGuid);
+
+					otherNode->Modify();
+					graph->GetSchema()->BreakNodeLinks(*otherNode);
+
+					otherNode->DestroyNode();
+				}
 			}
 		}
 	}
 }
 
-bool FGameFlowEditor::CanDeleteNodes() const
-{
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-		if (Node && Node->CanUserDeleteNode()) return true;
-	}
-
-	return false;
-}
+bool FGameFlowEditor::CanDeleteNodes() const { return CheckPredicateOnSelectedNodes([](const UEdGraphNode* node) { return node && node->CanUserDeleteNode(); }); }
 
 void FGameFlowEditor::CopySelectedNodes()
 {
-	FGraphPanelSelectionSet InitialSelectedNodes = GetSelectedNodes();
-
-	TSet<UEdGraphNode*> graphNodesToSelect;
-
 	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
 	{
 		if (graphEditor.IsValid())
 		{
+			FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
 
-			for (UEdGraphNode* graphNodeToSelect : graphNodesToSelect)
+			for (FGraphPanelSelectionSet::TIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
 			{
-				graphEditor->SetNodeSelection(graphNodeToSelect, true);
-			}
-		}
-	}
-
-	FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-
-	for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-
-		if (Node == nullptr)
-		{
-			SelectedIter.RemoveCurrent();
-			continue;
-		}
-
-		Node->PrepareForCopying();
-
-		if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(Node))
-		{
-			stateNode->PreviousOuter = stateNode->GetGraph()->GetTypedOuter<UGameFlow>();
-		}
-	}
-
-	FString ExportedText;
-	FEdGraphUtilities::ExportNodesToText(SelectedNodes, ExportedText);
-	FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
-
-	for (FGraphPanelSelectionSet::TIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-
-		if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(Node))
-		{
-			stateNode->PreviousOuter = nullptr;
-		}
-	}
-}
-
-bool FGameFlowEditor::CanCopyNodes() const
-{
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	for (FGraphPanelSelectionSet::TConstIterator SelectedIter(SelectedNodes); SelectedIter; ++SelectedIter)
-	{
-		UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-		if (Node && Node->CanDuplicateNode()) return true;
-	}
-
-	return false;
-}
-
-void FGameFlowEditor::DeleteSelectedDuplicatableNodes()
-{
-	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
-	{
-		if (graphEditor.IsValid())
-		{
-			const FGraphPanelSelectionSet OldSelectedNodes = graphEditor->GetSelectedNodes();
-			graphEditor->ClearSelectionSet();
-
-			for (FGraphPanelSelectionSet::TConstIterator SelectedIter(OldSelectedNodes); SelectedIter; ++SelectedIter)
-			{
-				UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter);
-				if (Node && Node->CanDuplicateNode())
+				UEdGraphNode* node = Cast<UEdGraphNode>(*NodeIt);
+				if (node && node->CanDuplicateNode())
 				{
-					graphEditor->SetNodeSelection(Node, true);
+					node->PrepareForCopying();
+
+					if (UGameFlowGraphNode_State* stateNode = Cast<UGameFlowGraphNode_State>(node))
+					{
+						stateNode->PreviousOuter = stateNode->GetGraph()->GetTypedOuter<UGameFlow>();
+					}
+				}
+				else
+				{
+					NodeIt.RemoveCurrent();
 				}
 			}
 
-			DeleteSelectedNodes();
-
-			graphEditor->ClearSelectionSet();
-
-			for (FGraphPanelSelectionSet::TConstIterator SelectedIter(OldSelectedNodes); SelectedIter; ++SelectedIter)
-			{
-				if (UEdGraphNode* Node = Cast<UEdGraphNode>(*SelectedIter))
-				{
-					graphEditor->SetNodeSelection(Node, true);
-				}
-			}
+			FString ExportedText;
+			FEdGraphUtilities::ExportNodesToText(SelectedNodes, ExportedText);
+			FPlatformApplicationMisc::ClipboardCopy(*ExportedText);
 		}
 	}
 }
+
+bool FGameFlowEditor::CanCopyNodes() const { return CheckPredicateOnSelectedNodes([](const UEdGraphNode* node) { return node && node->CanDuplicateNode(); }); }
 
 void FGameFlowEditor::PasteNodes()
 {
@@ -2103,6 +1979,8 @@ void FGameFlowEditor::PasteNodes()
 
 			// Undo/Redo support
 			const FScopedTransaction Transaction(FGenericCommands::Get().Paste->GetDescription());
+
+			StoreSelectedNodes(PrevSelectedNodes);
 
 			EdGraph->Modify();
 
@@ -2143,7 +2021,7 @@ void FGameFlowEditor::PasteNodes()
 					if (transitionRemapping.IsEmpty())
 					{
 						const TMap<FGuid, FGameFlowTransitionCollection>& transitionCollections = stateNode->PreviousOuter->GetTransitionCollections();
-						
+
 						if (!transitionCollections.IsEmpty())
 						{
 							transitionRemapping.Reserve(transitionCollections.Num());
@@ -2185,7 +2063,7 @@ void FGameFlowEditor::PasteNodes()
 
 						for (UGameFlowGraphNode_Transition* transitionNode : transitionNodes)
 						{
-							if (transitionNode->GetPreviousState()->NodeGuid == transitionRemappingEntry.Key && transitionNode->GetNextState()->NodeGuid == transitionEntry.Key)
+							if (transitionNode->GetPrevNode()->NodeGuid == transitionRemappingEntry.Key && transitionNode->GetNextNode()->NodeGuid == transitionEntry.Key)
 							{
 								shouldBeAdded = true;
 								break;
@@ -2250,7 +2128,6 @@ bool FGameFlowEditor::CanPasteNodes() const
 		{
 			FString ClipboardContent;
 			FPlatformApplicationMisc::ClipboardPaste(ClipboardContent);
-
 			return FEdGraphUtilities::CanImportNodesFromText(graphEditor->GetCurrentGraph(), ClipboardContent);
 		}
 	}
@@ -2265,10 +2142,8 @@ void FGameFlowEditor::OnCreateComment()
 		if (graphEditor.IsValid())
 		{
 			TSharedPtr<FEdGraphSchemaAction> Action = graphEditor->GetCurrentGraph()->GetSchema()->GetCreateCommentAction();
-
-			TSharedPtr<FGameFlowGraphSchemaAction_NewComment> newCommentAction = StaticCastSharedPtr<FGameFlowGraphSchemaAction_NewComment>(Action);
-
-			if (newCommentAction.IsValid())
+			
+			if (TSharedPtr<FGameFlowGraphSchemaAction_NewComment> newCommentAction = StaticCastSharedPtr<FGameFlowGraphSchemaAction_NewComment>(Action))
 			{
 				graphEditor->GetBoundsForSelectedNodes(newCommentAction->SelectedNodesBounds, 50);
 				newCommentAction->PerformAction(graphEditor->GetCurrentGraph(), nullptr, FVector2D());
@@ -2279,13 +2154,69 @@ void FGameFlowEditor::OnCreateComment()
 
 bool FGameFlowEditor::CanCreateComment() const
 {
-	const FGraphPanelSelectionSet SelectedNodes = GetSelectedNodes();
-	return SelectedNodes.Num() > 0;
+	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+	{
+		if (graphEditor.IsValid())
+		{
+			return graphEditor->GetSelectedNodes().Num() > 0;
+		}
+	}
+
+	return false;
+}
+
+void FGameFlowEditor::StoreSelectedNodes(TSet<FGuid>& selectedNodes)
+{
+	if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+	{
+		if (graphEditor.IsValid())
+		{
+			FGraphPanelSelectionSet SelectedNodes = graphEditor->GetSelectedNodes();
+
+			for (FGraphPanelSelectionSet::TIterator NodeIt(SelectedNodes); NodeIt; ++NodeIt)
+			{
+				if (UEdGraphNode* node = Cast<UEdGraphNode>(*NodeIt))
+				{
+					selectedNodes.FindOrAdd(node->NodeGuid);
+				}
+			}
+		}
+	}
+}
+
+void FGameFlowEditor::ApplySelectedNodes(const TSet<FGuid>& selectedNodes)
+{
+	if (selectedNodes.Num() > 0)
+	{
+		if (TSharedPtr<SGraphEditor> graphEditor = GraphEditorPtr.Pin())
+		{
+			if (graphEditor.IsValid())
+			{
+				for (const FGuid selectedNode : selectedNodes)
+				{
+					if (TObjectPtr<UEdGraphNode>* node = graphEditor->GetCurrentGraph()->Nodes.FindByPredicate([selectedNode](const UEdGraphNode* node) { return node->NodeGuid == selectedNode; }))
+					{
+						graphEditor->SetNodeSelection(node->Get(), true);
+					}
+				}
+			}
+		}
+	}
 }
 
 //------------------------------------------------------
 // FAssetTypeActions_GameFlow
 //------------------------------------------------------
+
+class FAssetTypeActions_GameFlow : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual void OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor) override;
+	virtual uint32 GetCategories() override;
+};
 
 FText FAssetTypeActions_GameFlow::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlow_Name", "Game Flow"); }
 
@@ -2293,16 +2224,7 @@ UClass* FAssetTypeActions_GameFlow::GetSupportedClass() const { return UGameFlow
 
 void FAssetTypeActions_GameFlow::OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<IToolkitHost> EditWithinLevelEditor)
 {
-	EToolkitMode::Type Mode = EditWithinLevelEditor.IsValid() ? EToolkitMode::WorldCentric : EToolkitMode::Standalone;
-
-	for (TArray<UObject*>::TConstIterator ObjIt = InObjects.CreateConstIterator(); ObjIt; ++ObjIt)
-	{
-		if (UGameFlow* gameFlow = Cast<UGameFlow>(*ObjIt))
-		{
-			TSharedRef<FGameFlowEditor> NewEditor(new FGameFlowEditor());
-			NewEditor->InitGameFlowEditor(Mode, EditWithinLevelEditor, gameFlow);
-		}
-	}
+	FGameFlowCoreEditorModule::OpenAssetEditor(InObjects);
 }
 
 uint32 FAssetTypeActions_GameFlow::GetCategories() { return EAssetTypeCategories::Gameplay; }
@@ -2310,6 +2232,15 @@ uint32 FAssetTypeActions_GameFlow::GetCategories() { return EAssetTypeCategories
 //------------------------------------------------------
 // FAssetTypeActions_GameFlowContext
 //------------------------------------------------------
+
+class FAssetTypeActions_GameFlowContext : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual uint32 GetCategories() override;
+};
 
 FText FAssetTypeActions_GameFlowContext::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlowContext_Name", "Game Flow Context (Map based)"); }
 
@@ -2320,6 +2251,15 @@ uint32 FAssetTypeActions_GameFlowContext::GetCategories() { return EAssetTypeCat
 //------------------------------------------------------
 // FAssetTypeActions_GameFlowTransitionKey
 //------------------------------------------------------
+
+class FAssetTypeActions_GameFlowTransitionKey : public FAssetTypeActions_Base
+{
+public:
+	virtual FText GetName() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual FColor GetTypeColor() const override { return FColor(129, 50, 255); }
+	virtual uint32 GetCategories() override;
+};
 
 FText FAssetTypeActions_GameFlowTransitionKey::GetName() const { return LOCTEXT("FAssetTypeActions_GameFlowTransitionKey_Name", "Game Flow Transition Key"); }
 
@@ -2378,6 +2318,18 @@ void FGameFlowCoreEditorModule::ShutdownModule()
 	RegisteredAssetTypeActions.Empty();
 }
 
+void FGameFlowCoreEditorModule::OpenAssetEditor(const TArray<UObject*>& InObjects)
+{
+	for (TArray<UObject*>::TConstIterator ObjIt = InObjects.CreateConstIterator(); ObjIt; ++ObjIt)
+	{
+		if (UGameFlow* gameFlow = Cast<UGameFlow>(*ObjIt))
+		{
+			TSharedRef<FGameFlowEditor> NewEditor(new FGameFlowEditor());
+			NewEditor->InitGameFlowEditor(EToolkitMode::Standalone, nullptr, gameFlow);
+		}
+	}
+}
+
 #undef LOCTEXT_NAMESPACE
-	
+
 IMPLEMENT_MODULE(FGameFlowCoreEditorModule, GameFlowCoreEditor)

@@ -320,7 +320,9 @@ public:
 
 	bool IsStateActive(const FGuid& state) const { return state == ActiveState; }
 
-	void SetEntryState(const FGuid& state) { EntryState = state; }
+	const FGuid GetEntryStateId() const { return EntryState; }
+
+	void SetEntryStateId(const FGuid& state) { EntryState = state; }
 
 	const TMap<FGuid, TObjectPtr<UGameFlowState>>& GetStates() const { return States; }
 
