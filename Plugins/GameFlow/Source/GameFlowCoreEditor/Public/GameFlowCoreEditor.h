@@ -15,6 +15,8 @@ public:
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
 
+	static void OpenAssetEditor(const TArray<UObject*>& InObjects);
+
 private:
 	TArray<TSharedPtr<FAssetTypeActions_Base>> RegisteredAssetTypeActions;
 	TSharedPtr<FGameFlowGraphNodeFactory> GameFlowGraphNodeFactory;
