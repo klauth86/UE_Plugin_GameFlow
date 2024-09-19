@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 2,
-	"VersionName": "2.0",
+	"VersionName": "2.1",
 	"FriendlyName": "Game Flow",
 	"Description": "Game Flow",
 	"Category": "Gameplay",
@@ -20,21 +20,13 @@
 			"Name": "GameFlowCore",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
-			"PlatformAllowList": [
-				"Win64",
-				"Mac",
-				"Linux"
-			]
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
 		},
 		{
 			"Name": "GameFlowCoreEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default",
-			"PlatformAllowList": [
-				"Win64",
-				"Mac",
-				"Linux"
-			]
+			"PlatformAllowList": [ "Win64", "Mac", "Linux" ]
 		}
 	]
 }
