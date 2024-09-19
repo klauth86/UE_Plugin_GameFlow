@@ -721,7 +721,7 @@ void UGameFlow::OnExitState(const OperationId operationId)
 		nextOperationId = OperationFactory::ExitState_Steps(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 	}
 
-	if (stateObject->SubFlow && (stateObject->bInstancedSubFlow || stateObject->SubFlow->ActiveState.IsValid() && (stateObject->bResetSubFlowOnExitState || operationInfo.OperationFlags & EOperationFlags::ResetActiveSubFlow)))
+	if (stateObject->SubFlow && (stateObject->bInstancedSubFlow || (stateObject->SubFlow->ActiveState.IsValid() && (stateObject->bResetSubFlowOnExitState || (operationInfo.OperationFlags & EOperationFlags::ResetActiveSubFlow)))))
 	{
 		nextOperationId = OperationFactory::ExitState_SubFlow_Set(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
 		nextOperationId = OperationFactory::ExitState_SubFlow_Set_Log(operationInfo.ActiveState, flow, nextOperationId, operationInfo.OperationFlags, operationInfo.AdditiveDepth);
@@ -766,7 +766,7 @@ void UGameFlow::OnExitState_SubFlow(const OperationId operationId)
 	}
 	else // Shared
 	{
-		if (stateObject->SubFlow->ActiveState.IsValid() && (stateObject->bResetSubFlowOnExitState || operationInfo.OperationFlags & EOperationFlags::ResetActiveSubFlow))
+		if (stateObject->SubFlow->ActiveState.IsValid() && (stateObject->bResetSubFlowOnExitState || (operationInfo.OperationFlags & EOperationFlags::ResetActiveSubFlow)))
 		{
 			// Exit Sub Flow
 
